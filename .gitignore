@@ -31,3 +31,4 @@ frontend/dist/
 
 # Misceláneos
 .DS_Store
+generateHash.ts
