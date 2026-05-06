@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: jhared_pos_api
+    restart: unless-stopped
+    # Pasamos las variables del .env del backend al contenedor
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+    ports:
+      - "4000:4000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: jhared_pos_web
+    restart: unless-stopped
+    ports:
+      - "80:80" # El frontend funcional usa Nginx, por eso sale por el puerto 80
+    depends_on:
+      - backend

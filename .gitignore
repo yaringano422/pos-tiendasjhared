@@ -1,0 +1,33 @@
+# Dependencias
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Variables de entorno (¡CRÍTICO!)
+.env
+backend/.env
+frontend/.env
+*.env.*
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Compilados
+dist/
+build/
+backend/dist/
+frontend/dist/
+
+# IDEs (VS Code, etc.)
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Misceláneos
+.DS_Store
