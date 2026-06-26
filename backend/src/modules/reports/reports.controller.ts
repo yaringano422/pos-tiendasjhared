@@ -1,5 +1,5 @@
-import { Request, Response } from 'express';
-import { ReportsService } from './reports.service';
+import { Request, Response } from "express";
+import { ReportsService } from "./reports.service";
 
 const reportsService = new ReportsService();
 
@@ -16,7 +16,10 @@ export class ReportsController {
   async getProfitReport(req: Request, res: Response) {
     try {
       const { start, end } = req.query;
-      const profit = await reportsService.getRealProfit(start as string, end as string);
+      const profit = await reportsService.getRealProfit(
+        start as string,
+        end as string,
+      );
       res.json(profit);
     } catch (error: any) {
       res.status(500).json({ error: error.message });

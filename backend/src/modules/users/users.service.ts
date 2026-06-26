@@ -2,7 +2,7 @@ import { supabase } from "../../config/database";
 import bcrypt from "bcryptjs";
 
 export class UserService {
-  // Combinación de Auth + Admin
+  // Combinación de Auth y Admin
   async authenticate(username: string, password: string) {
     const { data: user, error } = await supabase
       .from("users")

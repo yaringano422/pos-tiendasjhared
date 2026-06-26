@@ -24,12 +24,12 @@ export class AuditService {
       .order("performed_at", { ascending: false });
 
     if (error) {
-      // 🟢 Caso normal: no hay registros
+      //Caso normal: no hay registros
       if (error.code === "PGRST116") {
         return [];
       }
 
-      // 🔴 Error real (no rompemos frontend)
+      //Error real
       console.error("Error en getAuditLogs:", error);
       return [];
     }
@@ -59,7 +59,7 @@ export class AuditService {
     }
 
     // =========================
-    // 2. DEVOLVER STOCK (ESCALABLE)
+    // 2.DEVOLVER STOCK (ESCALABLE)
     // =========================
     const { data: items, error: itemsError } = await supabase
       .from("sales_items")
@@ -70,7 +70,7 @@ export class AuditService {
       console.error("Error obteniendo items:", itemsError);
     }
 
-    // 🔁 Caso moderno: múltiples productos
+    // múltiples productos
     if (items && items.length > 0) {
       for (const item of items) {
         const { data: product, error: pError } = await supabase
@@ -99,7 +99,7 @@ export class AuditService {
         }
       }
     }
-    // 🧠 Fallback: ventas antiguas (sin sales_items)
+    //Fallback: ventas antiguas (sin sales_items)
     else if (sale.product_id && sale.quantity) {
       const { data: product, error: pError } = await supabase
         .from("products")

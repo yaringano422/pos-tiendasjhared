@@ -2,8 +2,7 @@ import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 import { useAuthStore } from "./store/authStore";
-import MainLayout from "./layouts/MainLayout";
-
+// @ts-ignore
 // Páginas del Proyecto Tienda de Celulares
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -16,6 +15,7 @@ import ReportsPage from "./pages/ReportsPage";
 import POSPage from "./pages/POSPage";
 import HistoryPage from "./pages/HistoryPage";
 import AuditPage from "./pages/AuditPage";
+import MainLayout from "./layouts/MainLayout";
 /**
  * Componente de Ruta Protegida
  * Verifica si el usuario está autenticado antes de permitir el acceso

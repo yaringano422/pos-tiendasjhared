@@ -14,7 +14,7 @@ export function useProducts() {
   const [categories, setCategories] = useState<UICategory[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Persistente entre renders (clave)
+  // Persistente entre renders
   const colorMapRef = useRef<Record<string, string>>({});
 
   const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6"];
@@ -26,7 +26,7 @@ export function useProducts() {
     return colorMapRef.current[name];
   };
 
-  // ✅ Procesamiento limpio
+  //Procesamiento
   const processProducts = useCallback((data: Product[]) => {
     setProducts(data);
 
@@ -45,7 +45,7 @@ export function useProducts() {
     setCategories(dynamicCategories);
   }, []);
 
-  // ✅ Fetch robusto con AbortController correcto
+  //Fetch con AbortController
   const fetchProducts = useCallback(
     async (signal?: AbortSignal) => {
       setLoading(true);
@@ -54,8 +54,8 @@ export function useProducts() {
       const token = localStorage.getItem("token");
 
       try {
-        // 🔹 Intento Backend
-        const response = await fetch(`${API_URL}/products`, {
+        // Intento Backend
+        const response = await fetch(`${API_URL}/inventory/`, {
           signal,
           headers: {
             "Content-Type": "application/json",
@@ -63,33 +63,61 @@ export function useProducts() {
           },
         });
 
-        if (!response.ok) throw new Error("Backend error");
+        if (!response.ok) {
+          //estatus del error (ej. 401, 404, 500)
+          console.error(
+            `❌ Error del servidor Express. Status: ${response.status}`,
+          );
+          throw new Error("Backend error");
+        }
 
-        const data = await response.json();
+        const responseData = await response.json();
+        console.log(" Datos crudos recibidos del backend:", responseData);
 
         if (!signal?.aborted) {
-          processProducts(data);
+          const normalizedData = Array.isArray(responseData)
+            ? responseData
+            : responseData.data || responseData.products || [];
+
+          processProducts(normalizedData);
         }
       } catch (error: any) {
-        // ❗ Ignorar abort
         if (error.name === "AbortError") return;
 
+        // Se imprime el error exacto que provocó el salto al catch de Supabase
+        console.error("🚨 MOTIVO POR EL CUAL FALLÓ EL BACKEND:", error);
         console.warn("⚠️ Backend falló, usando Supabase...");
 
         try {
+          // join relacional para traer el nombre del proveedor
           const { data, error: sbError } = await supabase
             .from("products")
-            .select("*")
+            .select(
+              `
+        *,
+        providers (
+          id,
+          name
+        )
+      `,
+            )
             .eq("is_active", true)
             .order("name");
 
           if (sbError) throw sbError;
 
           if (data && !signal?.aborted) {
-            processProducts(data as Product[]);
+            console.log(
+              "📡 Datos obtenidos directamente de Supabase Fallback con proveedores:",
+              data,
+            );
+            processProducts(data as unknown as Product[]);
           }
         } catch (finalError) {
-          console.error("❌ Error crítico:", finalError);
+          console.error(
+            "❌ Error crítico en Fallback de Supabase:",
+            finalError,
+          );
           toast.error("No se pudieron cargar los productos");
         }
       } finally {
@@ -101,14 +129,14 @@ export function useProducts() {
     [processProducts],
   );
 
-  // ✅ useEffect con cancelación REAL
+  //useEffect con cancelación
   useEffect(() => {
     const controller = new AbortController();
 
     fetchProducts(controller.signal);
 
     return () => {
-      controller.abort(); // 🔥 evita memory leaks
+      controller.abort(); //no memory leaks
     };
   }, [fetchProducts]);
 

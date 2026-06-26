@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-// Vite requiere el prefijo VITE_ para exponer estas variables al navegador
+// Vite requiere el prefijo VITE_ para exponer las variables al navegador
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 

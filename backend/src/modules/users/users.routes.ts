@@ -1,15 +1,14 @@
 import { Router } from "express";
 import { getAllUsers, createNewUser, updateUserInfo } from "./users.controller";
 import { authMiddleware } from "../../middleware/auth";
-// Cambiamos la importación para evitar el error de "not a function"
 import * as rolesMiddleware from "../../middleware/roles";
 
 const router = Router();
 
 /**
  * RUTAS DE USUARIOS
- * Aplicamos authMiddleware primero para inyectar el usuario en 'req'
- * Luego usamos rolesMiddleware.checkRole para validar permisos
+ * Se aplica authMiddleware primero para inyectar el usuario en 'req'
+ * Luego la empleacion de  rolesMiddleware.checkRole para validar permisos
  */
 
 // Solo los administradores pueden ver la lista completa

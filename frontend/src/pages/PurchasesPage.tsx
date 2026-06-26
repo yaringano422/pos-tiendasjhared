@@ -29,7 +29,6 @@ export default function PurchasesPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Basado en los campos de la UI de Python[cite: 2]
   const [formData, setFormData] = useState({
     provider_id: 1,
     document_type: "01 Factura Electrónica (FE)",
@@ -124,7 +123,7 @@ export default function PurchasesPage() {
     }
   };
 
-  // Totales generales[cite: 2]
+  // Totales generales
   const globalSubtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
   const globalIgv = cart.reduce((sum, item) => sum + item.igv, 0);
   const globalTotal = cart.reduce((sum, item) => sum + item.total, 0);
@@ -149,7 +148,7 @@ export default function PurchasesPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* PANEL IZQUIERDO: CABECERA[cite: 2] */}
+        {/* PANEL IZQUIERDO: CABECERA */}
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-dark-800 border border-dark-700 p-5 rounded-xl space-y-4 shadow-xl">
             <h2 className="font-semibold flex items-center gap-2 border-b border-dark-700 pb-2 text-brand-400">
@@ -258,7 +257,7 @@ export default function PurchasesPage() {
           </div>
         </div>
 
-        {/* PANEL DERECHO: DETALLES Y TOTALES[cite: 2] */}
+        {/* PANEL DERECHO: DETALLES Y TOTALES */}
         <div className="lg:col-span-3 flex flex-col gap-6">
           <div className="bg-dark-800 border border-dark-700 rounded-xl overflow-hidden shadow-xl flex-1">
             <div className="overflow-auto max-h-[500px]">
@@ -353,7 +352,7 @@ export default function PurchasesPage() {
               </table>
             </div>
 
-            {/* DESGLOSE DE TOTALES FINAL[cite: 2] */}
+            {/* DESGLOSE DE TOTALES FINAL*/}
             <div className="bg-dark-900/50 p-6 border-t border-dark-700 grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
               <div className="text-center md:text-left">
                 <p className="text-[10px] text-gray-500 uppercase font-bold">

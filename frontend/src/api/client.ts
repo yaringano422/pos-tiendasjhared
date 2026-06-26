@@ -1,6 +1,6 @@
 import axios from "axios";
 
-// Cambiamos de 3000 a 4000 para conectar con tu backend
+// change 3000-4000 to connect with the backend
 const API_BASE_URL = "http://localhost:4000/api";
 
 const api = axios.create({
@@ -10,7 +10,7 @@ const api = axios.create({
   },
 });
 
-// Interceptor para el Token (Mantenemos tu lógica que está perfecta)
+// Interceptor para el Token
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");

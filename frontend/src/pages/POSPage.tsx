@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useCartStore } from "../store/cartStore";
 import { useProducts } from "../hooks/useProducts";
 import { useAuthStore } from "../store/authStore";
@@ -16,39 +16,112 @@ import {
   Layers,
   Layout,
   Calculator,
+  FileText,
+  RefreshCw,
+  Calendar,
+  Tag,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
-import type { Product } from "../types";
+import type { Product, PriceMode } from "../types";
 
 export default function POSPage() {
   // 1. Datos y Hook de productos
   const { products, categories, loading, refetch } = useProducts();
+  // 1.1 Estado para controlar la altura del contenedor inferior (en píxeles)
+  const [footerHeight, setFooterHeight] = React.useState(520);
+  const isResizing = React.useRef(false);
 
   // 2. Estados de UI
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [customerName, setCustomerName] = useState("Público General");
+  // 2.1 Manejador para computadoras (Mouse)
+  const startResizing = React.useCallback(
+    (mouseDownEvent: React.MouseEvent) => {
+      mouseDownEvent.preventDefault();
+      isResizing.current = true;
 
-  // 3. Estados de Pago (UNIFICADOS - Corregido error de redeclaración)
+      const startY = mouseDownEvent.clientY;
+      const startHeight = footerHeight;
+
+      const doDrag = (mouseMoveEvent: MouseEvent) => {
+        if (!isResizing.current) return;
+
+        // Al arrastrar hacia arriba (delta negativo), la altura del footer aumenta
+        const deltaY = mouseMoveEvent.clientY - startY;
+        const newHeight = startHeight - deltaY;
+
+        // límites mínimos y máximos para no romper la interfaz
+        if (newHeight > 200 && newHeight < window.innerHeight - 150) {
+          setFooterHeight(newHeight);
+        }
+      };
+
+      const stopDrag = () => {
+        isResizing.current = false;
+        document.removeEventListener("mousemove", doDrag);
+        document.removeEventListener("mouseup", stopDrag);
+      };
+
+      document.addEventListener("mousemove", doDrag);
+      document.addEventListener("mouseup", stopDrag);
+    },
+    [footerHeight],
+  );
+
+  //  ESTADOS COMPLEMENTARIOS
+  const [tipoTransaccion, setTipoTransaccion] = useState<
+    "venta" | "cotizacion" | "devolucion" | "reserva"
+  >("venta");
+  const [tipoVenta, setTipoVenta] = useState<PriceMode>("menor");
+
+  // 3. Estados de Pago
   const [metodoPago, setMetodoPago] = useState<
-    "efectivo" | "tarjeta" | "mixto"
+    "efectivo" | "tarjeta" | "mixto" | "yape_plin" | "transferencia"
   >("efectivo");
   const [pagoEfectivo, setPagoEfectivo] = useState(0);
   const [pagoTarjeta, setPagoTarjeta] = useState(0);
+  const [comisionTransferencia, setComisionTransferencia] = useState<number>(0);
 
   const cart = useCartStore();
   const total = cart.getTotal();
+  // 3.1 Manejador para móviles (Touch)
+  const startResizingTouch = React.useCallback(
+    (touchEvent: React.TouchEvent) => {
+      isResizing.current = true;
+      const startY = touchEvent.touches[0].clientY;
+      const startHeight = footerHeight;
+
+      const doDragTouch = (moveEvent: TouchEvent) => {
+        if (!isResizing.current) return;
+        const deltaY = moveEvent.touches[0].clientY - startY;
+        const newHeight = startHeight - deltaY;
+
+        if (newHeight > 200 && newHeight < window.innerHeight - 150) {
+          setFooterHeight(newHeight);
+        }
+      };
+
+      const stopDragTouch = () => {
+        isResizing.current = false;
+        document.removeEventListener("touchmove", doDragTouch);
+        document.removeEventListener("touchend", stopDragTouch);
+      };
+
+      document.addEventListener("touchmove", doDragTouch);
+      document.addEventListener("touchend", stopDragTouch);
+    },
+    [footerHeight],
+  );
 
   // 4. Lógica de Escáner (Barcode/QR)
   const barcodeBuffer = useRef("");
-  // Referencia tipada para evitar conflictos entre NodeJS y Browser
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Evitar que el escáner capture datos si el usuario está en un input que no es el buscador principal
       const activeEl = document.activeElement as HTMLInputElement;
       if (
         activeEl?.tagName === "INPUT" &&
@@ -94,19 +167,28 @@ export default function POSPage() {
 
   // 5. Sincronización automática de montos
   useEffect(() => {
-    if (metodoPago === "efectivo") {
+    const extraTransferencia =
+      metodoPago === "transferencia" && comisionTransferencia > 0
+        ? Number((total * (comisionTransferencia / 100)).toFixed(2))
+        : 0;
+
+    const totalConComision =
+      total + cart.getCommisionCard() + extraTransferencia;
+
+    if (metodoPago === "efectivo" || metodoPago === "yape_plin") {
       setPagoEfectivo(total);
+      setPagoTarjeta(0);
+    } else if (metodoPago === "transferencia") {
+      setPagoEfectivo(totalConComision);
       setPagoTarjeta(0);
     } else if (metodoPago === "tarjeta") {
       setPagoEfectivo(0);
-      setPagoTarjeta(total);
+      setPagoTarjeta(totalConComision);
     } else if (metodoPago === "mixto") {
-      if (pagoEfectivo === 0 && pagoTarjeta === 0) {
-        setPagoEfectivo(total / 2);
-        setPagoTarjeta(total / 2);
-      }
+      setPagoEfectivo(Number((totalConComision / 2).toFixed(2)));
+      setPagoTarjeta(Number((totalConComision / 2).toFixed(2)));
     }
-  }, [metodoPago, total]);
+  }, [metodoPago, total, comisionTransferencia]);
 
   // 6. Helpers
   const formatCurrency = (val: number) =>
@@ -129,14 +211,23 @@ export default function POSPage() {
       return;
     }
 
+    const precioNormal = Number(product.price);
+    const precioMayor = Number(product.price_major || product.price);
+
+    // Asignar precio inicial dinámicamente según la modalidad seleccionada en el footer
+    const precioAplicado =
+      tipoVenta === "mayorista" ? precioMayor : precioNormal;
+
     cart.addItem({
       product_id: product.id,
       name: product.name,
-      price: product.price,
+      price: precioAplicado,
+      price_normal: precioNormal, // <- RESPALDO PRECIO MENOR
+      price_major: precioMayor, // <- RESPALDO PRECIO MAYOR
       quantity: 1,
-      modo_precio: "normal",
+      modo_precio: tipoVenta,
       stock_disponible: isService ? 999 : product.stock_actual,
-    });
+    } as any);
 
     toast.success(`${product.name} añadido`, {
       position: "bottom-center",
@@ -149,9 +240,7 @@ export default function POSPage() {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
-    // Logo en Base64 (Reemplazar por el real si se dispone de él)
     const logoBase64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...";
-
     const subtotalSinImpuesto = saleData.total_price / 1.18;
     const igv = saleData.total_price - subtotalSinImpuesto;
 
@@ -171,18 +260,19 @@ export default function POSPage() {
         </head>
         <body>
           <div class="text-center">
-            <img src="${logoBase64}" class="logo" alt="Logo" /><br/>
             <span class="bold" style="font-size: 14px;">TIENDAS JHARED</span><br/>
-            RUC: 20600000000<br/>
-            Av. Principal 123 - Lima<br/>
-            Tel: 987 654 321
+            RUC: 10201010913<br/>
+            Jr.Atahualpa 270 - Huancayo - Junin<br/>
+            Tel: 960 097 010
           </div>
 
           <div class="divider"></div>
           <div>
             FECHA: ${new Date().toLocaleString()}<br/>
+            TRANSACCIÓN: ${saleData.tipo_transaccion.toUpperCase()}<br/>
             CLIENTE: ${saleData.customer_name || "PÚBLICO GENERAL"}<br/>
-            METODO: ${saleData.metodo_pago.toUpperCase()}
+            METODO: ${saleData.metodo_pago.toUpperCase()}<br/>
+            TIPO VENTA: ${saleData.items[0]?.modo_precio.toUpperCase() || "MENOR"}
           </div>
           <div class="divider"></div>
 
@@ -201,7 +291,7 @@ export default function POSPage() {
                   <td colspan="2">${item.name}</td>
                 </tr>
                 <tr>
-                  <td>${item.quantity} x ${item.price.toFixed(2)}</td>
+                  <td>${item.quantity} x ${item.price.toFixed(2)} (${item.modo_precio})</td>
                   <td class="text-right">${item.subtotal.toFixed(2)}</td>
                 </tr>
               `,
@@ -251,8 +341,6 @@ export default function POSPage() {
 
     try {
       const token = useAuthStore.getState().token;
-      const subtotalBase = cart.getTotal() / 1.18;
-      const igvCalculado = cart.getTotal() - subtotalBase;
 
       if (!token) {
         toast.error("Sesión expirada", { id: loadingToast });
@@ -260,31 +348,62 @@ export default function POSPage() {
         return;
       }
 
-      if (
-        metodoPago === "mixto" &&
-        Math.abs(pagoEfectivo + pagoTarjeta - total) > 0.01
-      ) {
-        toast.error("La suma de pagos no coincide con el total", {
-          id: loadingToast,
-        });
-        return;
+      const totalCarrito = cart.getTotal();
+
+      const extraTransferencia =
+        metodoPago === "transferencia" && comisionTransferencia > 0
+          ? Number((totalCarrito * (comisionTransferencia / 100)).toFixed(2))
+          : 0;
+
+      const totalFinalVenta =
+        metodoPago === "tarjeta" || metodoPago === "mixto"
+          ? totalCarrito + cart.getCommisionCard()
+          : totalCarrito + extraTransferencia;
+
+      if (metodoPago === "mixto") {
+        const sumaPagos = pagoEfectivo + pagoTarjeta;
+        if (Math.abs(sumaPagos - totalFinalVenta) > 0.01) {
+          toast.error("La suma de pagos no coincide con el total", {
+            id: loadingToast,
+          });
+          return;
+        }
       }
 
+      const subtotalBase = Number((totalFinalVenta / 1.18).toFixed(2));
+      const igvCalculado = Number((totalFinalVenta - subtotalBase).toFixed(2));
+
       const saleData = {
+        tipo_transaccion: tipoTransaccion, // <- Mapeado dinámicamente según la selección del usuario
         items: cart.items.map((item) => ({
           product_id: item.product_id,
           name: item.name,
           quantity: item.quantity,
           price: item.price,
-          subtotal: item.price * item.quantity,
-          modo_precio: item.modo_precio || "normal",
+          subtotal: Number((item.price * item.quantity).toFixed(2)),
+          modo_precio: tipoVenta, // <- Guarda la modalidad seleccionada
         })),
         metodo_pago: metodoPago,
-        pago_efectivo: metodoPago === "tarjeta" ? 0 : pagoEfectivo,
-        pago_tarjeta: metodoPago === "efectivo" ? 0 : pagoTarjeta,
-        comision_tarjeta: cart.getCommisionCard(),
+        pago_efectivo:
+          metodoPago === "efectivo"
+            ? totalFinalVenta
+            : metodoPago === "mixto"
+              ? pagoEfectivo
+              : 0,
+        pago_tarjeta:
+          metodoPago === "tarjeta"
+            ? totalFinalVenta
+            : metodoPago === "mixto"
+              ? pagoTarjeta
+              : 0,
+        pago_transferencia:
+          metodoPago === "transferencia" ? totalFinalVenta : 0,
+        comision_tarjeta:
+          metodoPago === "tarjeta" || metodoPago === "mixto"
+            ? cart.getCommisionCard()
+            : extraTransferencia,
         subtotal: cart.getSubtotal(),
-        total_price: total,
+        total_price: totalFinalVenta,
         customer_name: customerName.trim() || "PÚBLICO GENERAL",
         igv: igvCalculado,
         subtotal_neto: subtotalBase,
@@ -312,11 +431,13 @@ export default function POSPage() {
         id: result.id,
       });
 
-      // Limpieza de estado post-venta
       cart.clearCart();
       setPagoEfectivo(0);
       setPagoTarjeta(0);
+      setComisionTransferencia(0);
       setCustomerName("Público General");
+      setTipoTransaccion("venta");
+      setTipoVenta("menor");
       refetch();
       setShowMobileCart(false);
     } catch (error: any) {
@@ -451,7 +572,7 @@ export default function POSPage() {
       {/* SIDEBAR DERECHA: CARRITO Y PAGO */}
       <aside
         className={clsx(
-          "fixed inset-0 z-50 lg:relative lg:inset-auto lg:z-0 lg:flex w-full lg:w-[400px] bg-dark-950 lg:bg-dark-900/20 border-l border-dark-800 flex flex-col transition-transform duration-300",
+          "fixed inset-0 z-50 lg:relative lg:inset-auto lg:z-0 lg:flex w-full lg:w-[410px] bg-dark-950 lg:bg-dark-900/20 border-l border-dark-800 flex flex-col transition-transform duration-300",
           showMobileCart
             ? "translate-x-0"
             : "translate-x-full lg:translate-x-0",
@@ -472,7 +593,8 @@ export default function POSPage() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
+        {/* CONTENEDOR DE PRODUCTOS */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4 custom-scrollbar">
           {cart.items.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-dark-600 opacity-40">
               <Smartphone size={64} className="mb-4" />
@@ -488,6 +610,7 @@ export default function POSPage() {
                   <span className="text-sm font-semibold flex-1 pr-2">
                     {item.name}
                   </span>
+
                   <button
                     onClick={() => cart.removeItem(item.product_id)}
                     className="text-dark-500 hover:text-red-400"
@@ -495,6 +618,7 @@ export default function POSPage() {
                     <Trash2 size={16} />
                   </button>
                 </div>
+
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-3 bg-dark-950/50 rounded-xl p-1 border border-dark-700">
                     <button
@@ -505,9 +629,11 @@ export default function POSPage() {
                     >
                       <Minus size={14} />
                     </button>
+
                     <span className="text-sm font-mono font-bold">
                       {item.quantity}
                     </span>
+
                     <button
                       onClick={() =>
                         cart.updateQuantity(item.product_id, item.quantity + 1)
@@ -517,125 +643,354 @@ export default function POSPage() {
                       <Plus size={14} />
                     </button>
                   </div>
-                  <span className="font-bold text-brand-400">
-                    {formatCurrency(item.price * item.quantity)}
-                  </span>
+
+                  {/* PRECIO */}
+                  <div className="flex flex-col items-end gap-1">
+                    {tipoVenta === "personalizado" ? (
+                      <div className="flex items-center gap-1 bg-dark-950 px-2 py-0.5 rounded-lg border border-brand-500/30">
+                        <span className="text-[10px] text-dark-500 font-mono">
+                          S/
+                        </span>
+
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={item.price}
+                          className="w-14 bg-transparent text-right text-xs font-bold text-brand-400 outline-none font-mono"
+                          onChange={(e) => {
+                            const precioDigitado =
+                              parseFloat(e.target.value) || 0;
+
+                            cart.updateItemPrice(
+                              item.product_id,
+                              precioDigitado,
+                            );
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-dark-400 font-mono">
+                        {item.quantity} x {formatCurrency(item.price)}
+                      </span>
+                    )}
+
+                    <span className="font-bold text-brand-400">
+                      {formatCurrency(item.price * item.quantity)}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))
           )}
         </div>
 
+        {/* FOOTER REAJUSTABLE */}
         {cart.items.length > 0 && (
-          <div className="p-6 bg-dark-900/80 border-t border-dark-700 space-y-5 shadow-2xl">
-            {/* CLIENTE */}
-            <div className="space-y-1">
-              <label className="text-[10px] text-dark-400 ml-1 font-bold">
-                CLIENTE
-              </label>
-              <input
-                type="text"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="Nombre del cliente"
-                className="w-full bg-dark-900 border border-dark-700 rounded-lg p-2 text-sm outline-none focus:border-brand-500 text-white"
-              />
+          <>
+            {/* BARRA CONTROLADORA (RESIZER) */}
+            <div
+              onMouseDown={startResizing}
+              onTouchStart={startResizingTouch}
+              className="h-3 w-full cursor-ns-resize bg-dark-950 border-t border-b border-dark-800 flex items-center justify-center group select-none transition-colors hover:bg-brand-500/10 active:bg-brand-500/20 z-10"
+            >
+              <div className="w-12 h-1 bg-dark-700 group-hover:bg-brand-500 rounded-full transition-colors" />
             </div>
 
-            {/* MÉTODOS DE PAGO */}
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { id: "efectivo", icon: Banknote, label: "Efectivo" },
-                { id: "tarjeta", icon: CreditCard, label: "Tarjeta" },
-                { id: "mixto", icon: Calculator, label: "Mixto" },
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setMetodoPago(m.id as any)}
-                  className={clsx(
-                    "p-2 rounded-xl border flex flex-col items-center gap-1 transition-all",
-                    metodoPago === m.id
-                      ? "border-brand-500 bg-brand-500/10 text-brand-400"
-                      : "border-dark-700 text-dark-500",
+            {/* CONTENEDOR INFERIOR AJUSTABLE */}
+            <div
+              style={{ height: `${footerHeight}px` }}
+              className="p-5 bg-dark-900/80 space-y-4 shadow-2xl overflow-y-auto custom-scrollbar flex flex-col justify-between select-none"
+            >
+              <div>
+                {/* 1. SECCIÓN: TIPO DE TRANSACCIÓN */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-dark-400 ml-1 font-bold tracking-wider uppercase">
+                    Tipo de Transacción
+                  </label>
+                  <div className="grid grid-cols-4 gap-1.5 bg-dark-950 p-1 rounded-xl border border-dark-800">
+                    {[
+                      { id: "venta", label: "Venta", icon: ShoppingBag },
+                      { id: "cotizacion", label: "Cotiz.", icon: FileText },
+                      { id: "devolucion", label: "Devol.", icon: RefreshCw },
+                      { id: "reserva", label: "Reserv.", icon: Calendar },
+                    ].map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setTipoTransaccion(t.id as any)}
+                        className={clsx(
+                          "flex flex-col items-center justify-center py-2 px-1 rounded-lg transition-all text-center gap-1",
+                          tipoTransaccion === t.id
+                            ? "bg-brand-600 text-white shadow font-bold"
+                            : "text-dark-400 hover:text-white hover:bg-dark-900/40",
+                        )}
+                      >
+                        <t.icon size={14} />
+                        <span className="text-[10px] tracking-tight">
+                          {t.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. SECCIÓN: TIPO DE VENTA */}
+                <div className="space-y-1.5 mt-4">
+                  <label className="text-[10px] text-dark-400 ml-1 font-bold tracking-wider uppercase">
+                    Tipo de Venta
+                  </label>
+                  <div className="flex bg-dark-950 p-1 rounded-xl border border-dark-800 w-full font-medium">
+                    {[
+                      { id: "menor", label: "Por Menor" },
+                      { id: "mayorista", label: "Por Mayor" },
+                      { id: "personalizado", label: "Personalizado" },
+                    ].map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => {
+                          setTipoVenta(v.id as PriceMode);
+                          cart.setGlobalPriceMode(v.id as PriceMode); // <- SINCRONIZA Y RECALCULA EL STORE AL INSTANTE
+                        }}
+                        className={clsx(
+                          "flex-1 text-center py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5",
+                          tipoVenta === v.id
+                            ? "bg-dark-800 text-brand-400 border border-dark-700/60 font-bold shadow"
+                            : "text-dark-400 hover:text-white",
+                        )}
+                      >
+                        <Tag
+                          size={12}
+                          className={
+                            tipoVenta === v.id
+                              ? "text-brand-400"
+                              : "text-dark-500"
+                          }
+                        />
+                        {v.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3. CLIENTE */}
+                <div className="space-y-1 mt-4">
+                  <label className="text-[10px] text-dark-400 ml-1 font-bold uppercase tracking-wider">
+                    Cliente
+                  </label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Nombre del cliente"
+                    className="w-full bg-dark-900 border border-dark-700 rounded-lg p-2 text-sm outline-none focus:border-brand-500 text-white font-medium"
+                  />
+                </div>
+
+                {/* 4. MÉTODOS DE PAGO */}
+                <div className="space-y-1.5 mt-4">
+                  <label className="text-[10px] text-dark-400 ml-1 font-bold uppercase tracking-wider">
+                    Método de Pago
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[
+                      { id: "efectivo", icon: Banknote, label: "Efectivo" },
+                      {
+                        id: "tarjeta",
+                        icon: CreditCard,
+                        label: "Tarjeta (+5%)",
+                      },
+                      {
+                        id: "yape_plin",
+                        icon: Smartphone,
+                        label: "Yape / Plin",
+                      },
+                      { id: "transferencia", icon: Layers, label: "Transf." },
+                      { id: "mixto", icon: Calculator, label: "Mixto" },
+                    ].map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setMetodoPago(m.id as any)}
+                        className={clsx(
+                          "p-2 rounded-xl border flex flex-col items-center gap-1 transition-all",
+                          metodoPago === m.id
+                            ? "border-brand-500 bg-brand-500/10 text-brand-400"
+                            : "border-dark-700 text-dark-500 hover:bg-dark-900/50",
+                        )}
+                      >
+                        <m.icon size={16} />
+                        <span className="text-[9px] font-bold uppercase tracking-wider">
+                          {m.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* INPUTS DINÁMICOS DE PAGO */}
+                {metodoPago === "mixto" && (
+                  <div className="grid grid-cols-2 gap-3 mt-3 animate-in slide-in-from-top-2 duration-200">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-dark-400 font-bold ml-1">
+                        EFECTIVO
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0.00"
+                        value={pagoEfectivo === 0 ? "" : pagoEfectivo}
+                        onChange={(e) => {
+                          const totalVenta = total + cart.getCommisionCard();
+                          const val = Math.max(
+                            0,
+                            parseFloat(e.target.value) || 0,
+                          );
+                          if (val > totalVenta) {
+                            setPagoEfectivo(totalVenta);
+                            setPagoTarjeta(0);
+                          } else {
+                            setPagoEfectivo(val);
+                            setPagoTarjeta(
+                              Number((totalVenta - val).toFixed(2)),
+                            );
+                          }
+                        }}
+                        className="w-full bg-dark-900 border border-dark-700 rounded-lg p-2 text-sm text-white outline-none focus:border-brand-500 font-mono"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-dark-400 font-bold ml-1">
+                        TARJETA (+5%)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0.00"
+                        value={pagoTarjeta === 0 ? "" : pagoTarjeta}
+                        onChange={(e) => {
+                          const totalVenta = total + cart.getCommisionCard();
+                          const val = Math.max(
+                            0,
+                            parseFloat(e.target.value) || 0,
+                          );
+                          if (val > totalVenta) {
+                            setPagoTarjeta(totalVenta);
+                            setPagoEfectivo(0);
+                          } else {
+                            setPagoTarjeta(val);
+                            setPagoEfectivo(
+                              Number((totalVenta - val).toFixed(2)),
+                            );
+                          }
+                        }}
+                        className="w-full bg-dark-900 border border-dark-700 rounded-lg p-2 text-sm text-white outline-none focus:border-brand-500 font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {metodoPago === "transferencia" && (
+                  <div className="space-y-1 mt-3 animate-in slide-in-from-top-2 duration-200">
+                    <label className="text-[10px] text-dark-400 font-bold ml-1">
+                      COMISIÓN TRANSFERENCIA (%)
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={
+                          comisionTransferencia === 0
+                            ? ""
+                            : comisionTransferencia
+                        }
+                        onChange={(e) => {
+                          const val = Math.max(
+                            0,
+                            parseFloat(e.target.value) || 0,
+                          );
+                          setComisionTransferencia(val);
+                        }}
+                        className="w-full bg-dark-900 border border-dark-700 rounded-lg p-2 pr-8 text-sm text-white outline-none focus:border-brand-500 font-mono"
+                      />
+                      <span className="absolute right-3 text-sm text-dark-400 font-mono font-bold">
+                        %
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* TOTALES Y BOTÓN FIJADOS ABAJO */}
+              <div className="space-y-3 mt-auto">
+                <div className="space-y-2 border-t border-dark-700 pt-3">
+                  <div className="flex justify-between text-sm text-dark-400">
+                    <span>Subtotal</span>
+                    <span className="font-mono">
+                      {formatCurrency(cart.getSubtotal())}
+                    </span>
+                  </div>
+
+                  {(metodoPago === "tarjeta" || metodoPago === "mixto") && (
+                    <div className="flex justify-between text-sm text-emerald-400 animate-in fade-in duration-150">
+                      <span>Comisión Tarjeta (5%)</span>
+                      <span className="font-mono">
+                        {formatCurrency(cart.getCommisionCard())}
+                      </span>
+                    </div>
                   )}
+
+                  {metodoPago === "transferencia" &&
+                    comisionTransferencia > 0 && (
+                      <div className="flex justify-between text-sm text-emerald-400 animate-in fade-in duration-150">
+                        <span>
+                          Comisión Transferencia ({comisionTransferencia}%)
+                        </span>
+                        <span className="font-mono">
+                          {formatCurrency(
+                            total * (comisionTransferencia / 100),
+                          )}
+                        </span>
+                      </div>
+                    )}
+
+                  <div className="flex justify-between text-xl font-black pt-2">
+                    <span>Total</span>
+                    <span className="text-brand-500 font-mono">
+                      {formatCurrency(
+                        metodoPago === "tarjeta" || metodoPago === "mixto"
+                          ? cart.getTotal() + cart.getCommisionCard()
+                          : metodoPago === "transferencia"
+                            ? cart.getTotal() +
+                              Number(
+                                (total * (comisionTransferencia / 100)).toFixed(
+                                  2,
+                                ),
+                              )
+                            : cart.getTotal(),
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleConfirmSale}
+                  disabled={cart.items.length === 0}
+                  className="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50 shadow-xl shadow-brand-900/20"
                 >
-                  <m.icon size={18} />
-                  <span className="text-[10px] font-bold uppercase">
-                    {m.label}
+                  <CheckCircle2 size={22} />
+                  <span>
+                    {tipoTransaccion === "venta" && "Finalizar Venta"}
+                    {tipoTransaccion === "cotizacion" && "Generar Cotización"}
+                    {tipoTransaccion === "devolucion" && "Procesar Devolución"}
+                    {tipoTransaccion === "reserva" && "Registrar Reserva"}
                   </span>
                 </button>
-              ))}
-            </div>
-
-            {/* INPUTS PAGO MIXTO */}
-            {metodoPago === "mixto" && (
-              <div className="grid grid-cols-2 gap-3 animate-in slide-in-from-top-2 duration-200">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-dark-400 font-bold ml-1">
-                    EFECTIVO
-                  </label>
-                  <input
-                    type="number"
-                    value={pagoEfectivo}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      setPagoEfectivo(val);
-                      setPagoTarjeta(Math.max(0, cart.getTotal() - val));
-                    }}
-                    className="w-full bg-dark-900 border border-dark-700 rounded-lg p-2 text-sm text-white outline-none focus:border-brand-500"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-dark-400 font-bold ml-1">
-                    TARJETA (+5%)
-                  </label>
-                  <input
-                    type="number"
-                    value={pagoTarjeta}
-                    onChange={(e) => {
-                      const val = parseFloat(e.target.value) || 0;
-                      setPagoTarjeta(val);
-                      setPagoEfectivo(Math.max(0, cart.getTotal() - val));
-                    }}
-                    className="w-full bg-dark-900 border border-dark-700 rounded-lg p-2 text-sm text-white outline-none focus:border-brand-500"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* TOTALES */}
-            <div className="space-y-2 border-t border-dark-700 pt-3">
-              <div className="flex justify-between text-sm text-dark-400">
-                <span>Subtotal</span>
-                <span className="font-mono">
-                  {formatCurrency(cart.getSubtotal())}
-                </span>
-              </div>
-              {metodoPago !== "efectivo" && (
-                <div className="flex justify-between text-sm text-emerald-400">
-                  <span>Comisión Tarjeta (5%)</span>
-                  <span className="font-mono">
-                    {formatCurrency(cart.getCommisionCard())}
-                  </span>
-                </div>
-              )}
-              <div className="flex justify-between text-xl font-black pt-2">
-                <span>Total</span>
-                <span className="text-brand-500 font-mono">
-                  {formatCurrency(cart.getTotal())}
-                </span>
               </div>
             </div>
-
-            <button
-              onClick={handleConfirmSale}
-              disabled={cart.items.length === 0}
-              className="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50 shadow-xl shadow-brand-900/20"
-            >
-              <CheckCircle2 size={22} />
-              <span>Finalizar Venta</span>
-            </button>
-          </div>
+          </>
         )}
       </aside>
     </div>

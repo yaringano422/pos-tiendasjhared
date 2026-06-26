@@ -28,7 +28,7 @@ export default function AuditPage() {
     try {
       const response: any = await auditApi.getLogs();
 
-      // 🛡️ NORMALIZACIÓN DEFENSIVA
+      //NORMALIZACIÓN DEFENSIVA
       const rawData = response?.data ?? response;
 
       const finalData: AuditLog[] = Array.isArray(rawData)
@@ -39,21 +39,21 @@ export default function AuditPage() {
 
       setLogs(finalData);
 
-      // 🟠 ÉXITO SILENCIOSO (vacío)
+      // ÉXITO SILENCIOSO (vacío)
       if (finalData.length === 0) {
         console.info("Auditoría sin registros (estado válido)");
       }
     } catch (error: any) {
       const status = error?.response?.status;
 
-      // 🟢 404 = NO ERROR (flujo normal)
+      //404 = NO ERROR (flujo normal)
       if (status === 404) {
         console.info("Auditoría: backend sin registros (404)");
         setLogs([]);
         return;
       }
 
-      // 🔴 ERROR REAL (500 / red / servidor caído)
+      //ERROR REAL (500 / red / servidor caído)
       setHasError(true);
       console.error("Error crítico en auditoría:", error);
 

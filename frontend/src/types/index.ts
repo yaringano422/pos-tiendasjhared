@@ -28,36 +28,72 @@ export interface Provider {
 export interface Product {
   id: number;
   name: string;
-  brand?: string;
-  category?: string;
+  brand?: string | null;
+  category?: string | null;
   price: number; // Precio Venta Normal
   price_major: number; // Precio Mayorista
   cost_buy: number; // Precio de Costo (para utilidad)
-  stock_actual: number;
-  stock_min?: number;
-  provider_id?: number;
-  providers?: { name: string }; // Relación para tablas
-  barcode?: string;
-  qr_code?: string;
+  stock: number; // stock total inicial
+  stock_actual: number; // stock el inventario real
+  stock_sold: number;
   is_active: boolean;
-  image_url?: string;
-  created_at: string;
+  date_added?: string;
+  sale_percentage?: number;
+  // Relations
+  provider_id?: number | null;
+  providers?: {
+    name: string;
+  };
+
+  // Codes
+  qr_code?: string | null;
+  barcode?: string | null;
+
+  // Audit
+  user_id?: string | number | null;
 }
-// Agrega esto a tu archivo de tipos
+export interface InsertProductInput {
+  name: string;
+
+  brand?: string | null;
+  category?: string | null;
+
+  price: number;
+  cost_buy: number;
+  price_major?: number;
+
+  stock?: number;
+  stock_actual: number;
+  stock_sold?: number;
+
+  is_active?: boolean;
+
+  sale_percentage?: number;
+
+  provider_id?: number | null;
+
+  qr_code?: string | null;
+  barcode?: string | null;
+
+  user_id?: string | number | null;
+}
+// --- API RESPONSES ---
 export interface ApiResponse<T> {
   success: boolean;
-  data: T; // Aquí T será Product[]
+  data: T;
   message?: string;
+  error?: string;
 }
 
 // --- SALES ---
 export type PaymentMethod =
-  | "Efectivo"
-  | "Tarjeta"
-  | "Yape"
-  | "Plin"
-  | "Transferencia";
-export type PriceMode = "normal" | "mayorista" | "personalizado";
+  | "efectivo"
+  | "tarjeta"
+  | "yape"
+  | "plin"
+  | "transferencia"
+  | "mixto";
+export type PriceMode = "menor" | "mayorista" | "personalizado";
 
 export interface Customer {
   id: number;
@@ -80,17 +116,41 @@ export interface SaleItem {
 
 export interface Sale {
   id: number;
-  product_id?: number; // Para ventas simples
-  user_id: number;
+
+  product_id?: number;
+
+  user_id?: number;
+
   customer_id?: number;
-  quantity: number;
-  total: number;
-  total_price?: number; // Alias para compatibilidad
-  metodo_pago: PaymentMethod;
+
+  quantity?: number;
+
+  total?: number;
+
+  total_price?: number;
+
+  metodo_pago?: PaymentMethod | string;
+
+  status?: string;
+
+  pago_efectivo?: number;
+
+  pago_tarjeta?: number;
+
+  comision_tarjeta?: number;
+
   date: string;
-  customers?: { name: string };
-  users?: { username: string };
-  items?: SaleItem[]; // Si usas tabla detalle
+
+  customers?: {
+    name: string;
+  };
+
+  users?: {
+    username: string;
+  };
+
+  items?: SaleItem[];
+  sales_items?: SaleItem[];
 }
 
 // --- PURCHASES (Entradas de Mercadería) ---
@@ -150,11 +210,18 @@ export interface CartItem {
 }
 
 export interface DashboardSummary {
-  salesToday: number;
-  purchasesToday: number;
-  lowStock: number;
+  salesToday: number; // Suma total_price del día
+  productsSold: number; // Cantidad total unidades vendidas
+  newCustomers: number; // Clientes únicos excluyendo Público General
+  totalInventory: number; // Sumatoria física de stock_actual
+  lowStock: number; // Alertas críticas de stock < 5
   profit?: number;
   timestamp: string;
+  purchasesToday?: number; // Total de compras del día
+  topSellingProducts?: {
+    name: string;
+    quantity: number;
+  }[];
 }
 
 // --- AUTH STATE (Zustand/Store) ---
@@ -182,6 +249,5 @@ export interface AuditLog {
     metodo_pago: string;
     total?: number; // Alias para compatibilidad
   };
-  // Eliminamos las propiedades sueltas que causan ruido
   status?: string;
 }

@@ -1,53 +1,118 @@
-import { supabase } from '../../config/database';
-import { PostgrestResponse } from '@supabase/supabase-js';
+// C:\Puntodeventa\backend\src\modules\reports\reports.service.ts
+import { supabase } from "../../config/database";
 
 export class ReportsService {
-  // ✅ KPIs para las tarjetas del Dashboard (Ventas Hoy, Compras, Utilidad)
+  //KPIs dinámicos y reales para las tarjetas del Dashboard
   async getDashboardKPIs() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayISO = today.toISOString();
+    // 1. Configurar rango de fechas para HOY en hora local (Perú UTC-5)
+    const ahora = new Date();
+    const inicioHoy = new Date(
+      ahora.getFullYear(),
+      ahora.getMonth(),
+      ahora.getDate(),
+      0,
+      0,
+      0,
+      0,
+    ).toISOString();
+    const finHoy = new Date(
+      ahora.getFullYear(),
+      ahora.getMonth(),
+      ahora.getDate(),
+      23,
+      59,
+      59,
+      999,
+    ).toISOString();
 
-    // 1. Ventas de hoy
-    const { data: sales } = await supabase
-      .from('sales')
-      .select('total')
-      .gte('created_at', todayISO);
+    // 2. Consultar las ventas completadas del día de hoy
+    const { data: salesToday, error: sError } = await supabase
+      .from("sales")
+      .select(
+        `
+        id, 
+        total_price, 
+        status, 
+        date,
+        customers (name),
+        sales_items (quantity)
+      `,
+      )
+      .gte("date", inicioHoy)
+      .lte("date", finHoy)
+      .eq("status", "completada");
 
-    // 2. Compras de hoy
-    const { data: purchases } = await supabase
-      .from('purchases')
-      .select('total')
-      .gte('date_issue', todayISO);
+    if (sError) throw sError;
 
-    // 3. Stock Bajo (Productos con stock < 5, como en tu UI)
+    // 3. Procesar Ventas del Día (Monto real acumulado)
+    const totalSalesToday =
+      salesToday?.reduce((acc, sale) => acc + (sale.total_price || 0), 0) || 0;
+
+    // 4. Procesar Unidades de Productos Vendidos
+    const totalProductsSold =
+      salesToday?.reduce((acc, sale) => {
+        const itemsCount = Array.isArray(sale.sales_items)
+          ? sale.sales_items.reduce(
+              (sum: number, item: any) => sum + (item.quantity || 0),
+              0,
+            )
+          : 0;
+        return acc + itemsCount;
+      }, 0) || 0;
+
+    // 5. Procesar Clientes Nuevos Únicos (Excluyendo 'PÚBLICO GENERAL')
+    const clientesHoy =
+      salesToday
+        ?.map((sale: any) => {
+          // Si Supabase lo devuelve como un array, tomamos el primer elemento; si es objeto, directo.
+          const customerObj = Array.isArray(sale.customers)
+            ? sale.customers[0]
+            : sale.customers;
+          return customerObj?.name?.trim().toUpperCase();
+        })
+        .filter((name) => name && name !== "PÚBLICO GENERAL") || [];
+
+    const totalNewCustomers = new Set(clientesHoy).size;
+
+    // 6. Consultar Alertas de Stock Bajo
     const { count: lowStockCount } = await supabase
-      .from('products')
-      .select('*', { count: 'exact', head: true })
-      .lt('stock_actual', 5)
-      .eq('is_active', true);
+      .from("products")
+      .select("id", { count: "exact", head: true })
+      .lt("stock_actual", 5)
+      .eq("is_active", true);
 
-    const totalSales = sales?.reduce((sum, s) => sum + s.total, 0) || 0;
-    const totalPurchases = purchases?.reduce((sum, p) => sum + p.total, 0) || 0;
+    // 7. Inventario Total en unidades físicas reales
+    const { data: productsInventory } = await supabase
+      .from("products")
+      .select("stock_actual")
+      .eq("is_active", true);
+
+    const totalInventoryUnits =
+      productsInventory?.reduce((sum, p) => sum + (p.stock_actual || 0), 0) ||
+      0;
 
     return {
-      salesToday: totalSales,
-      purchasesToday: totalPurchases,
+      salesToday: Number(totalSalesToday.toFixed(2)),
+      productsSold: totalProductsSold,
+      newCustomers: totalNewCustomers,
+      totalInventory: totalInventoryUnits,
       lowStock: lowStockCount || 0,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 
-  // ✅ Utilidad Real (Venta - Costo de Compra)
+  //Utilidad Real (Venta - Costo de Compra)
   async getRealProfit(startDate: string, endDate: string) {
     const { data, error } = await supabase
-      .from('sales_items')
-      .select(`
+      .from("sales_items")
+      .select(
+        `
         subtotal,
         products (cost_buy)
-      `)
-      .gte('created_at', startDate)
-      .lte('created_at', endDate);
+      `,
+      )
+      .gte("created_at", startDate)
+      .lte("created_at", endDate);
 
     if (error) throw error;
 
@@ -59,12 +124,12 @@ export class ReportsService {
     return { profit };
   }
 
-  // ✅ Top Productos más vendidos
+  //Top Productos más vendidos
   async getTopProducts(limit = 5) {
     const { data, error } = await supabase
-      .from('sales_items')
-      .select('quantity, products(name)')
-      .order('quantity', { ascending: false })
+      .from("sales_items")
+      .select("quantity, products(name)")
+      .order("quantity", { ascending: false })
       .limit(limit);
 
     if (error) throw error;

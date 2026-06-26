@@ -7,8 +7,9 @@ export interface SelectedVariant {
   priceModifier: number;
 }
 
+// Extendemos conceptualmente lo que debe tener cada CartItem para soportar los respaldos
 interface CartState {
-  items: CartItem[];
+  items: any[]; // Usamos any o actualiza tu interfaz CartItem en types.ts para incluir price_normal, price_major y modo_precio
   tableId: string | null;
   orderId: string | null;
   customerName: string;
@@ -16,7 +17,6 @@ interface CartState {
   notes: string;
   discountAmount: number;
 
-  // AJUSTE: Ahora acepta un objeto CartItem para compatibilidad con el POS
   addItem: (item: CartItem) => void;
   removeItem: (productId: string | number) => void;
   updateQuantity: (productId: string | number, quantity: number) => void;
@@ -26,6 +26,10 @@ interface CartState {
     newVariants: SelectedVariant[],
   ) => void;
 
+  // ACCIONES PARA PASAR EL CONTROL DE PRECIOS AL STORE
+  setGlobalPriceMode: (mode: PriceMode) => void;
+  updateItemPrice: (productId: string | number, price: number) => void;
+
   setTable: (tableId: string | null) => void;
   setCustomer: (name: string, count?: number) => void;
   setDiscount: (amount: number) => void;
@@ -33,7 +37,7 @@ interface CartState {
 
   getSubtotal: () => number;
   getTaxAmount: () => number;
-  getCommisionCard: () => number; // Comisión del 5%
+  getCommisionCard: () => number;
   getTotal: () => number;
 }
 
@@ -46,8 +50,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   notes: "",
   discountAmount: 0,
 
-  // Implementación ajustada para recibir el objeto del POS
-  addItem: (newItem: CartItem) => {
+  addItem: (newItem: any) => {
     const { items } = get();
     const productId = String(newItem.product_id);
     const existingItem = items.find((i) => String(i.product_id) === productId);
@@ -55,7 +58,6 @@ export const useCartStore = create<CartState>((set, get) => ({
     if (existingItem) {
       const newQuantity = existingItem.quantity + newItem.quantity;
 
-      // Validación de stock si el dato está disponible
       if (
         newItem.stock_disponible !== undefined &&
         newQuantity > newItem.stock_disponible
@@ -96,12 +98,46 @@ export const useCartStore = create<CartState>((set, get) => ({
       item.stock_disponible !== undefined &&
       quantity > item.stock_disponible
     ) {
-      return; // No actualizar si excede el stock
+      return;
     }
 
     set((state) => ({
       items: state.items.map((i) =>
         String(i.product_id) === String(productId) ? { ...i, quantity } : i,
+      ),
+    }));
+  },
+
+  // RECALCULACIÓN GLOBAL AL CAMBIAR TIPO DE VENTA
+  setGlobalPriceMode: (mode: PriceMode) => {
+    set((state) => ({
+      items: state.items.map((item) => {
+        let nuevoPrecio = item.price;
+
+        // Recuperamos los respaldos guardados originalmente al añadir el producto
+        const normal = item.price_normal ?? item.price;
+        const major = item.price_major ?? item.price;
+
+        if (mode === "menor") nuevoPrecio = normal;
+        if (mode === "mayorista") nuevoPrecio = major;
+        // Si es 'personalizado', mantiene el precio que tiene actualmente hasta que el usuario lo edite
+
+        return {
+          ...item,
+          modo_precio: mode,
+          price: nuevoPrecio,
+        };
+      }),
+    }));
+  },
+
+  // PERMITE EDITAR EL PRECIO UNITARIO MANUALMENTE EN MODO PERSONALIZADO
+  updateItemPrice: (productId, price) => {
+    set((state) => ({
+      items: state.items.map((item) =>
+        String(item.product_id) === String(productId)
+          ? { ...item, price: price, modo_precio: "personalizado" }
+          : item,
       ),
     }));
   },
@@ -112,11 +148,12 @@ export const useCartStore = create<CartState>((set, get) => ({
         if (String(item.product_id) !== String(productId)) return item;
 
         const previousModifiersSum = (item.variants || []).reduce(
-          (acc, v) => acc + (v.priceModifier || 0),
+          (acc: number, v: SelectedVariant) => acc + (v.priceModifier || 0),
           0,
         );
+
         const newModifiersSum = newVariants.reduce(
-          (acc, v) => acc + (v.priceModifier || 0),
+          (acc: number, v: SelectedVariant) => acc + (v.priceModifier || 0),
           0,
         );
 
@@ -149,26 +186,19 @@ export const useCartStore = create<CartState>((set, get) => ({
       discountAmount: 0,
     }),
 
-  // CÁLCULOS FINANCIEROS
-
-  // Suma simple de (precio * cantidad) de todos los items
   getSubtotal: () => {
     return get().items.reduce((sum, i) => sum + i.price * i.quantity, 0);
   },
 
-  // Calcula el IGV (18%) contenido en el subtotal
   getTaxAmount: () => {
     const subtotal = get().getSubtotal();
     return subtotal - subtotal / 1.18;
   },
 
-  // Comisión por pago con tarjeta (5% sobre el valor de los productos)
   getCommisionCard: () => {
     return get().getSubtotal() * 0.05;
   },
 
-  // Total final: Subtotal - Descuento + (Comisión si aplica)
-  // Nota: La lógica de si sumar o no la comisión la manejas en el componente POS
   getTotal: () => {
     return get().getSubtotal() - get().discountAmount;
   },

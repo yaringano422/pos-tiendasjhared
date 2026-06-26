@@ -8,6 +8,6 @@ export const env = {
   nodeEnv: process.env.NODE_ENV || "development",
   jwtSecret: process.env.JWT_SECRET || "secret",
   supabaseUrl: process.env.SUPABASE_URL || "",
-  supabaseKey: process.env.SUPABASE_ANON_KEY || "",
+  supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY || "",
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
 };

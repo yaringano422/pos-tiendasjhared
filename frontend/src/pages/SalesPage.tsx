@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { salesApi, inventoryApi } from "../services/api"; // Usando tus servicios
+import { salesApi, inventoryApi } from "../services/api";
 import { ShoppingCart, User, DollarSign, Package } from "lucide-react";
 import toast from "react-hot-toast";
 import { Product } from "@/types";
@@ -22,8 +22,8 @@ export default function SalesPage() {
 
   const loadProducts = async () => {
     try {
-      const { data } = await inventoryApi.getAll();
-      setProducts(data);
+      const response = await inventoryApi.getAll();
+      setProducts(response);
     } catch (error) {
       toast.error("Error al cargar productos");
     }
@@ -33,7 +33,7 @@ export default function SalesPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      // El backend recibe esto y SalesService.registerSale hace el resto
+      //backend recibe y SalesService.registerSale lo completa
       await salesApi.create(formData);
       toast.success("Venta registrada correctamente");
       setFormData({ ...formData, quantity: 1, product_id: "" });

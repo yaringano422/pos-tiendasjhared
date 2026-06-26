@@ -7,7 +7,7 @@ interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  // Cambiamos email por username para que coincida con tu backend de TiendasJhared
+  // email por username para que coincida con el backend
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
   checkAuth: () => void;
@@ -22,13 +22,25 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (username: string, password: string) => {
     try {
       set({ isLoading: true });
-      
-      // Llamada a nuestro servicio que usa axios/client.ts
-      const { data } = await authApi.login({ username, password });
 
-      const { token, user } = data;
+      // 1. Obtencion la respuesta  del api de autenticación
+      const res = await authApi.login({
+        username,
+        password,
+      });
 
-      // Guardamos en localStorage para que el interceptor de client.ts lo use
+      console.log("Respuesta login raw:", res); // verificar en la consola
+
+      // 2. Extraccion segura sin importar cómo venga estructurado por Axios
+      // Si viene directo en 'res' o si viene dentro de una propiedad '.data'
+      const token = res?.token || (res as any)?.data?.token;
+      const user = res?.user || (res as any)?.data?.user;
+
+      if (!token || !user) {
+        throw new Error("El servidor no retornó un token o usuario válido.");
+      }
+
+      // 3. Almacenamiento
       localStorage.setItem("token", token);
       localStorage.setItem("user", JSON.stringify(user));
 
@@ -38,15 +50,15 @@ export const useAuthStore = create<AuthState>((set) => ({
         isAuthenticated: true,
         isLoading: false,
       });
-    } catch (err) {
-      console.error("LOGIN ERROR:", err);
+    } catch (err: any) {
+      console.error("LOGIN ERROR DETECTADO:", err);
       set({ isLoading: false, isAuthenticated: false });
       throw err;
     }
   },
 
   logout: () => {
-    // Limpiamos los datos locales
+    // Limpieza de datos locales
     localStorage.removeItem("token");
     localStorage.removeItem("user");
 
@@ -64,11 +76,16 @@ export const useAuthStore = create<AuthState>((set) => ({
       const userData = localStorage.getItem("user");
 
       if (!token || !userData) {
-        set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+        set({
+          user: null,
+          token: null,
+          isAuthenticated: false,
+          isLoading: false,
+        });
         return;
       }
 
-      // Si existen datos, restauramos la sesión
+      // Si hay datos, se restaura la sesión
       set({
         user: JSON.parse(userData),
         token: token,

@@ -1,7 +1,5 @@
 import express from "express";
 import cors from "cors";
-// import helmet from "helmet"; // Sugerido
-// import morgan from "morgan"; // Sugerido
 import { env } from "./config/env";
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -14,15 +12,14 @@ import salesRoutes from "./modules/sales/sales.routes";
 import purchaseRoutes from "./modules/purchases/purchases.routes";
 import reportRoutes from "./modules/reports/reports.routes";
 import auditRoutes from "./modules/audit/audit.routes";
+
 const app = express();
 
 // Middlewares globales
 app.use(cors());
-// app.use(helmet()); // Seguridad extra
-// app.use(morgan('dev')); // Ver peticiones en consola
 app.use(express.json());
 
-// Ruta de salud (Opcional, útil para verificar que el server vive)
+// Ruta de salud
 app.get("/health", (req, res) => res.json({ status: "up" }));
 
 // Registro de Endpoints
@@ -34,7 +31,16 @@ app.use("/api/sales", salesRoutes);
 app.use("/api/purchases", purchaseRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/audit", auditRoutes);
-// Manejo de errores (Siempre al final)
+
+// Captura de rutas no encontradas (Evita respuestas HTML)
+app.use((req, res, next) => {
+  res.status(404).json({
+    success: false,
+    message: `La ruta ${req.originalUrl} no fue encontrada en este servidor.`,
+  });
+});
+
+// Middleware de manejo de errores global
 app.use(errorHandler);
 
 const PORT = env.port || 4000;

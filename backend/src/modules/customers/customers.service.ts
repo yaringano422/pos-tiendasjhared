@@ -1,6 +1,6 @@
-import { supabase } from '../../config/database';
+import { supabase } from "../../config/database";
 
-// Esta interfaz define la forma de tus datos de cliente
+// Esta interfaz define la forma de los datos del cliente
 export interface Customer {
   id?: number;
   name: string;
@@ -11,13 +11,12 @@ export interface Customer {
 }
 
 export class CustomerService {
-  
   // Obtener todos los clientes
   async getAllCustomers(): Promise<Customer[]> {
     const { data, error } = await supabase
-      .from('customers')
-      .select('*')
-      .order('name', { ascending: true });
+      .from("customers")
+      .select("*")
+      .order("name", { ascending: true });
 
     if (error) throw new Error(error.message);
     return data || [];
@@ -26,22 +25,26 @@ export class CustomerService {
   // Buscar cliente por nombre
   async getCustomerByName(name: string): Promise<Customer | null> {
     const { data, error } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('name', name)
+      .from("customers")
+      .select("*")
+      .eq("name", name)
       .single();
 
-    if (error && error.code !== 'PGRST116') throw new Error(error.message);
+    if (error && error.code !== "PGRST116") throw new Error(error.message);
     return data;
   }
 
-  // Crear o devolver cliente existente (Lógica de tu Python)
-  async getOrCreateCustomer(name: string, email?: string, phone?: string): Promise<Customer> {
+  // Crear o devolver cliente existente
+  async getOrCreateCustomer(
+    name: string,
+    email?: string,
+    phone?: string,
+  ): Promise<Customer> {
     const existing = await this.getCustomerByName(name);
     if (existing) return existing;
 
     const { data, error } = await supabase
-      .from('customers')
+      .from("customers")
       .insert([{ name, email, phone, created_at: new Date().toISOString() }])
       .select()
       .single();
@@ -51,11 +54,14 @@ export class CustomerService {
   }
 
   // Actualizar cliente
-  async updateCustomer(id: number, updates: Partial<Customer>): Promise<Customer | null> {
+  async updateCustomer(
+    id: number,
+    updates: Partial<Customer>,
+  ): Promise<Customer | null> {
     const { data, error } = await supabase
-      .from('customers')
+      .from("customers")
       .update(updates)
-      .eq('id', id)
+      .eq("id", id)
       .select()
       .single();
 

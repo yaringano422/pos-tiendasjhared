@@ -5,7 +5,8 @@ import { ChefHat, Eye, EyeOff, ArrowRight } from "lucide-react";
 import toast from "react-hot-toast";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("admin@restaurant.com");
+  // usar el 'username'  de  Supabase
+  const [email, setEmail] = useState("admin");
   const [password, setPassword] = useState("admin123");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -16,14 +17,12 @@ export default function LoginPage() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      // IMPORTANTE: Aunque tu estado local se llame 'email' (por el input),
-      // se lo pasas a la función login que espera el primer parámetro como 'username'.
+      // pasamos al store. Si el backend pide 'username', irá como 'admin' o 'cajero'
       await login(email, password);
 
       toast.success("¡Bienvenido al sistema!");
       navigate("/pos");
     } catch (error: any) {
-      // Si tu backend devuelve un error específico, toast lo mostrará
       toast.error(error.response?.data?.message || "Credenciales inválidas");
     } finally {
       setIsLoading(false);
@@ -88,11 +87,11 @@ export default function LoginPage() {
                 Email Corporativo
               </label>
               <input
-                type="email"
+                type="text" // Cambiado a text para que permita escribir tanto 'admin' como el correo
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-dark-800 border border-dark-700 text-white px-4 py-3 rounded-xl focus:ring-2 focus:ring-brand-500/50 outline-none transition-all"
-                placeholder="ejemplo@restaurante.com"
+                placeholder="Ej. admin o ejemplo@dominio.com"
                 required
               />
             </div>
@@ -135,19 +134,25 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Credenciales Demo */}
+          {/* Credenciales Demo*/}
           <div className="mt-8 p-4 bg-dark-800/30 rounded-xl border border-dark-700/50">
             <p className="text-xs text-dark-500 mb-2 font-semibold uppercase tracking-widest">
-              Acceso Demo:
+              Acceso Demo (Tiendas Jhared):
             </p>
             <div className="grid grid-cols-1 gap-1 text-xs text-dark-400">
               <p>
                 <span className="text-brand-400">Admin:</span>{" "}
-                admin@restaurant.com / admin123
+                <code className="bg-dark-900 px-1 py-0.5 rounded text-white">
+                  admin
+                </code>{" "}
+                / admin123
               </p>
               <p>
                 <span className="text-purple-400">Cajero:</span>{" "}
-                cajero@restaurant.com / cashier123
+                <code className="bg-dark-900 px-1 py-0.5 rounded text-white">
+                  cajero
+                </code>{" "}
+                / cashier123
               </p>
             </div>
           </div>

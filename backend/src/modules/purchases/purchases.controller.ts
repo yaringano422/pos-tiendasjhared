@@ -1,5 +1,5 @@
-import { Request, Response } from 'express';
-import { PurchaseService } from './purchases.service';
+import { Request, Response } from "express";
+import { PurchaseService } from "./purchases.service";
 
 const purchaseService = new PurchaseService();
 
@@ -8,12 +8,12 @@ export class PurchaseController {
     try {
       const purchase = await purchaseService.registerPurchase(req.body);
       res.status(201).json({
-        status: 'success',
-        message: 'Compra registrada correctamente',
-        data: purchase
+        status: "success",
+        message: "Compra registrada correctamente",
+        data: purchase,
       });
     } catch (error: any) {
-      res.status(400).json({ status: 'error', message: error.message });
+      res.status(400).json({ status: "error", message: error.message });
     }
   }
 
@@ -22,7 +22,7 @@ export class PurchaseController {
       const { month, year } = req.query;
       const history = await purchaseService.getPurchasesHistory(
         month ? parseInt(month as string) : undefined,
-        year ? parseInt(year as string) : undefined
+        year ? parseInt(year as string) : undefined,
       );
       res.json(history);
     } catch (error: any) {

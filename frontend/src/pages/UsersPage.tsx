@@ -19,7 +19,7 @@ export default function UsersPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("Todos");
 
-  // Estado para el formulario (Unificado como en tu versión de Python)
+  // Estado para el formulario
   const [selectedId, setSelectedId] = useState<string | number | null>(null);
   const [formData, setFormData] = useState({
     name: "",
@@ -37,9 +37,11 @@ export default function UsersPage() {
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const { data } = await usersApi.getAll();
+      // Como el servicio ya usa ensureArray, 'data' será un User[] directo
+      const data = await usersApi.getAll();
       setUsers(data);
     } catch (error) {
+      console.error("Error cargando usuarios:", error);
       toast.error("No se pudo cargar la lista de usuarios");
     } finally {
       setLoading(false);
@@ -104,7 +106,7 @@ export default function UsersPage() {
     });
   };
 
-  // Filtrado lógico (Igual que en tu función load_users de Python)
+  // Filtrado lógico
   const filteredUsers = users.filter((u) => {
     const matchesSearch =
       (u.name ?? "").toLowerCase().includes(searchTerm.toLowerCase()) ||

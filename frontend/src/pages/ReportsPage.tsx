@@ -9,7 +9,7 @@ import {
   ChevronRight,
   BarChart3,
 } from "lucide-react";
-import { reportsApi } from "../services/api"; // Importación correcta
+import { reportsApi } from "../services/api";
 import toast from "react-hot-toast";
 
 // Interfaces para mantener el tipado fuerte
@@ -38,14 +38,25 @@ export default function ReportsPage() {
   const fetchAllData = async () => {
     try {
       setLoading(true);
+
       // Llamadas en paralelo usando el service unificado
       const [kpisRes, topRes] = await Promise.all([
         reportsApi.getSummary(),
         reportsApi.getTopSelling(),
       ]);
 
-      setKpis(kpisRes.data);
-      setTopProducts(topRes.data);
+      if (kpisRes) {
+        setKpis({
+          salesToday: kpisRes.salesToday || 0,
+          purchasesToday: kpisRes.purchasesToday || 0,
+          lowStock: kpisRes.lowStock || 0,
+        });
+      } else {
+        setKpis({ salesToday: 0, purchasesToday: 0, lowStock: 0 });
+      }
+
+      // topRes es el Array plano [] devuelto por ensureArray.
+      setTopProducts(topRes || []);
     } catch (error: any) {
       toast.error("Error al sincronizar datos del servidor");
       console.error("Error cargando reportes:", error);
