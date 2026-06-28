@@ -51,6 +51,7 @@ export interface Product {
 
   // Audit
   user_id?: string | number | null;
+  image_url?: string | null;
 }
 export interface InsertProductInput {
   name: string;

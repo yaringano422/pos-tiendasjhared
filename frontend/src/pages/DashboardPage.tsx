@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Package,
   ShoppingCart,
-  Typography,
   Users,
   BarChart3,
   Settings,
