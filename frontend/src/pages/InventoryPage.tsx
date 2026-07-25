@@ -29,35 +29,45 @@ export default function InventoryPage() {
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const data = evt.target?.result;
-      const wb = XLSX.read(data, { type: "binary" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const jsonData: any[] = XLSX.utils.sheet_to_json(ws);
-
-      // Mapeo directo: si el usuario pone los nombres iguales, esto funciona directo
-      const payload = jsonData.map((item) => ({
-        name: item.name,
-        price: Number(item.price),
-        cost_buy: Number(item.cost_buy),
-        price_major: Number(item.price_major || 0),
-        stock_actual: Number(item.stock_actual || 0),
-        brand: item.brand,
-        category: item.category,
-        barcode: item.barcode ? String(item.barcode) : null,
-        provider_name: item.provider_name,
-      }));
-
       try {
+        const data = evt.target?.result;
+        const wb = XLSX.read(data, { type: "binary" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const jsonData: any[] = XLSX.utils.sheet_to_json(ws);
+
+        if (jsonData.length === 0) {
+          toast.error("El archivo Excel está vacío");
+          return;
+        }
+
+        // Mapeo flexible que lee columnas en español o inglés
+        const payload = jsonData.map((item) => ({
+          id: item.ID || item.id || undefined,
+          name: item.Nombre || item.name,
+          price: Number(item.Precio_Venta || item.price || 0),
+          cost_buy: Number(item.Costo_Compra || item.cost_buy || 0),
+          price_major: Number(item.Precio_Mayor || item.price_major || 0),
+          stock_actual: Number(item.Stock_Actual || item.stock_actual || 0),
+          brand: item.Marca || item.brand || null,
+          category: item.Categoría || item.category || null,
+          barcode: item.Codigo_Barras || item.barcode ? String(item.Codigo_Barras || item.barcode).trim() : null,
+          provider_name: item.Proveedor || item.provider_name || null,
+        }));
+
         const loadingToast = toast.loading("Importando productos...");
         await inventoryApi.bulkImport({ products: payload });
-        toast.success("Importación completada", { id: loadingToast });
+        toast.success("¡Importación exitosa!", { id: loadingToast });
         await refetch();
-      } catch (error) {
-        toast.error("Error al importar");
+      } catch (error: any) {
+        console.error(error);
+        toast.error("Error al procesar la plantilla de Excel");
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }
     };
     reader.readAsBinaryString(file);
   };
+
   const [search, setSearch] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -218,21 +228,23 @@ export default function InventoryPage() {
   const exportToExcel = () => {
     const productList = Array.isArray(products) ? products : [];
     const dataToExport = productList.map((p) => ({
+      ID: p.id,
       Nombre: p.name,
-      Marca: p.brand || "N/A",
-      Categoría: p.category || "General",
-      Proveedor: p.providers?.name || "Sin Proveedor",
-      Precio: p.price,
-      Costo: p.cost_buy,
-      Stock: p.stock_actual,
-      Código: p.barcode || "S/C",
+      Marca: p.brand || "",
+      Categoría: p.category || "",
+      Proveedor: p.providers?.name || "",
+      Precio_Venta: p.price,
+      Costo_Compra: p.cost_buy,
+      Precio_Mayor: p.price_major || 0,
+      Stock_Actual: p.stock_actual,
+      Codigo_Barras: p.barcode || "", // Aquí puedes pistolear directamente en Excel
     }));
+
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inventario");
-    XLSX.writeFile(wb, "Inventario_TiendasJhared.xlsx");
+    XLSX.writeFile(wb, `Inventario_TiendasJhared_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
-
   if (loading && (!products || products.length === 0)) {
     return (
       <div className="h-screen flex items-center justify-center bg-[#0a0a0c]">
@@ -591,15 +603,26 @@ export default function InventoryPage() {
               </div>
 
               <div>
-                <label className="text-xs font-bold text-dark-500 uppercase tracking-wider">
-                  Código de Barras
+                <label className="text-xs font-bold text-dark-500 uppercase tracking-wider flex items-center justify-between">
+                  <span>Código de Barras</span>
+                  <span className="text-[10px] text-brand-400 font-normal">Dispara la pistola aquí</span>
                 </label>
-                <input
-                  className="w-full bg-black/30 border border-white/10 rounded-xl p-3 mt-1 outline-none focus:border-brand-500 text-white"
-                  value={editingProduct?.barcode || ""}
-                  onChange={(e) => handleInputChange("barcode", e.target.value)}
-                  placeholder="Opcional"
-                />
+                <div className="relative mt-1">
+                  <input
+                    type="text"
+                    className="w-full bg-black/30 border border-white/10 rounded-xl p-3 outline-none focus:border-brand-500 text-white font-mono tracking-wider"
+                    value={editingProduct?.barcode || ""}
+                    onChange={(e) => handleInputChange("barcode", e.target.value)}
+                    onKeyDown={(e) => {
+                      // La pistola envía 'Enter' al terminar de escanear. Evita enviar el formulario por accidente.
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        toast.success("Código capturado", { duration: 1000, position: "bottom-center" });
+                      }
+                    }}
+                    placeholder="Haz click y dispara el scanner..."
+                  />
+                </div>
               </div>
 
               <div className="col-span-2">

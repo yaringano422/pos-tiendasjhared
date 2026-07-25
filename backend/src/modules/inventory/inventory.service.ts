@@ -284,30 +284,67 @@ export class InventoryService {
 
     return data || [];
   }
-  async bulkImportProducts(products: Product[]) {
-    const results = { success: 0, error: 0, details: [] as any[] };
+  async bulkImportProducts(products: any[]) {
+    const results = {
+      success: 0,
+      error: 0,
+      details: [] as { product: string; error: string }[],
+    };
 
     for (const p of products) {
       try {
-        // 1. Verificar si existe por barcode
-        const { data: existing } = await supabase
-          .from("products")
-          .select("id")
-          .eq("barcode", p.barcode)
-          .maybeSingle();
+        // Normalización previa del payload procedente del Excel / Frontend
+        const payload: any = {
+          name: p.name?.trim(),
+          brand: p.brand ? String(p.brand).trim().toLowerCase() : null,
+          category: p.category ? String(p.category).trim().toLowerCase() : null,
+          price: Number(p.price || 0),
+          cost_buy: Number(p.cost_buy || 0),
+          price_major: Number(p.price_major || 0),
+          stock_actual: Number(p.stock_actual || 0),
+          stock: Number(p.stock || p.stock_actual || 0),
+          barcode: p.barcode ? String(p.barcode).trim() : null,
+          provider_name: p.provider_name ? String(p.provider_name).trim() : null,
+          is_active: true,
+        };
 
-        if (existing) {
-          // Actualizar
-          await this.updateProduct(existing.id, p);
-          results.success++;
-        } else {
-          // Crear
-          await this.createProduct(p);
-          results.success++;
+        if (!payload.name) {
+          throw new Error("El nombre del producto es obligatorio");
         }
+
+        let existingId: number | null = null;
+
+        // 1. Si viene con un ID explícito (ej. exportado previamente)
+        if (p.id) {
+          existingId = Number(p.id);
+        } 
+        // 2. Si no tiene ID pero sí un barcode, buscar coincidencia en Supabase
+        else if (payload.barcode) {
+          const { data: existing } = await supabase
+            .from("products")
+            .select("id")
+            .eq("barcode", payload.barcode)
+            .maybeSingle();
+
+          if (existing) {
+            existingId = existing.id;
+          }
+        }
+
+        // 3. Ejecutar actualización o creación
+        if (existingId) {
+          await this.updateProduct(existingId, payload);
+        } else {
+          await this.createProduct(payload);
+        }
+
+        results.success++;
       } catch (err: any) {
         results.error++;
-        results.details.push({ product: p.name, error: err.message });
+        results.details.push({
+          product: p.name || "Producto sin nombre",
+          error: err.message || "Error desconocido en registro",
+        });
       }
     }
     return results;

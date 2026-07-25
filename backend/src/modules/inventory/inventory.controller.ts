@@ -30,7 +30,7 @@ export class InventoryController {
       if (!q)
         return res
           .status(400)
-          .json({ success: false, error: "Término requerido" });
+          .json({ success: false, error: "Término de búsqueda requerido" });
       const results = await inventoryService.searchProducts(q as string);
       res.status(200).json({ success: true, data: results });
     } catch (error: any) {
@@ -42,19 +42,14 @@ export class InventoryController {
     try {
       const payload = {
         ...req.body,
-
         price: Number(req.body.price),
         cost_buy: Number(req.body.cost_buy),
         price_major: Number(req.body.price_major || 0),
-
         stock: Number(req.body.stock || 0),
         stock_actual: Number(req.body.stock_actual || 0),
         stock_sold: Number(req.body.stock_sold || 0),
-
         sale_percentage: Number(req.body.sale_percentage || 0),
-
         provider_id: req.body.provider_id ? Number(req.body.provider_id) : null,
-
         is_active: req.body.is_active ?? true,
       };
 
@@ -86,11 +81,12 @@ export class InventoryController {
     try {
       const id = Number(req.params.id);
       await inventoryService.deleteProduct(id);
-      res.status(200).json({ success: true, message: "Eliminado" });
+      res.status(200).json({ success: true, message: "Eliminado con éxito" });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });
     }
   }
+
   async getFilters(req: Request, res: Response) {
     try {
       const filters = await inventoryService.getFilters();
@@ -99,6 +95,7 @@ export class InventoryController {
       res.status(500).json({ success: false, error: error.message });
     }
   }
+
   async getProviders(req: Request, res: Response) {
     try {
       const providers = await inventoryService.getProviders();
@@ -107,11 +104,27 @@ export class InventoryController {
       res.status(500).json({ success: false, error: error.message });
     }
   }
+
   async bulkImport(req: Request, res: Response) {
     try {
       const { products } = req.body;
+      if (!Array.isArray(products) || products.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: "El archivo no contiene un arreglo de productos válido.",
+        });
+      }
+
       const result = await inventoryService.bulkImportProducts(products);
-      res.status(200).json({ operation: "bulk_import_completed", ...result });
+
+      // Una sola respuesta HTTP limpia
+      res.status(200).json({
+        success: true,
+        operation: "bulk_import_completed",
+        successful_count: result.success,
+        error_count: result.error,
+        details: result.details,
+      });
     } catch (error: any) {
       res.status(400).json({ success: false, error: error.message });
     }
