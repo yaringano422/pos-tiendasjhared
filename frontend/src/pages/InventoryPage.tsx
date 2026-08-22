@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useProducts } from "../hooks/useProducts";
-import { inventoryApi } from "../services/api"; // Centralizacion de todas las peticiones HTTP
-import { Product, InsertProductInput, Provider } from "../types";
+import { inventoryApi } from "../services/api";
+import { Product, Provider } from "../types";
 import {
   Search,
   Package,
@@ -11,18 +11,36 @@ import {
   Download,
   X,
   Upload,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import toast from "react-hot-toast";
 import { Combobox } from "@/components/Combobox";
+
 const formatToTitleCase = (str: string | null | undefined) => {
   if (!str) return "—";
   return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
 };
+
+const ITEMS_PER_PAGE = 10;
+
 export default function InventoryPage() {
   const { products, loading, refetch } = useProducts();
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [providers, setProviders] = useState<Provider[]>([]);
+  const [editingProduct, setEditingProduct] = useState<Record<string, any> | null>(null);
+
+  // Reset de página al cambiar el filtro de búsqueda
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
+  // Manejo de carga masiva
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -40,7 +58,6 @@ export default function InventoryPage() {
           return;
         }
 
-        // Mapeo flexible que lee columnas en español o inglés
         const payload = jsonData.map((item) => ({
           id: item.ID || item.id || undefined,
           name: item.Nombre || item.name,
@@ -68,22 +85,10 @@ export default function InventoryPage() {
     reader.readAsBinaryString(file);
   };
 
-  const [search, setSearch] = useState("");
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [providers, setProviders] = useState<Provider[]>([]);
-
-  // Se guardan los valores locales para el modal
-  const [editingProduct, setEditingProduct] = useState<Record<
-    string,
-    any
-  > | null>(null);
-
-  // Cargar proveedores para las sugerencias del autocompletado interactivo
   useEffect(() => {
     const fetchProviders = async () => {
       try {
         const response = await inventoryApi.getProviders();
-        console.log("Respuesta de API:", response); // Revisar en consola
         if (response && response.data) {
           setProviders(response.data);
         }
@@ -97,7 +102,7 @@ export default function InventoryPage() {
     }
   }, [isModalOpen]);
 
-  // Filtrado por nombre, código, marca o proveedor
+  // Filtrado optimizado con useMemo
   const filteredProducts = useMemo(() => {
     const productList = Array.isArray(products) ? products : [];
     if (!search.trim()) return productList;
@@ -107,24 +112,22 @@ export default function InventoryPage() {
       const nameMatch = p.name?.toLowerCase().includes(searchLower) || false;
       const barcodeMatch = p.barcode?.includes(search) || false;
       const brandMatch = p.brand?.toLowerCase().includes(searchLower) || false;
-      const categoryMatch =
-        p.category?.toLowerCase().includes(searchLower) || false;
-      const providerMatch =
-        p.providers?.name?.toLowerCase().includes(searchLower) || false;
+      const categoryMatch = p.category?.toLowerCase().includes(searchLower) || false;
+      const providerMatch = p.providers?.name?.toLowerCase().includes(searchLower) || false;
 
-      return (
-        nameMatch ||
-        barcodeMatch ||
-        brandMatch ||
-        categoryMatch ||
-        providerMatch
-      );
+      return nameMatch || barcodeMatch || brandMatch || categoryMatch || providerMatch;
     });
   }, [products, search]);
+
+  // Cálculo de Paginación para prevenir colapso de DOM
+  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE) || 1;
+  const paginatedProducts = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredProducts.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredProducts, currentPage]);
+
   const categoryOptions = useMemo(() => {
-    const categories = products
-      .map((p) => p.category)
-      .filter(Boolean) as string[];
+    const categories = products.map((p) => p.category).filter(Boolean) as string[];
     return Array.from(new Set(categories.map((c) => c.toLowerCase())));
   }, [products]);
 
@@ -153,33 +156,22 @@ export default function InventoryPage() {
     const stock_actual = Number(editingProduct.stock_actual || 0);
     const stock = Number(editingProduct.stock || 0);
 
-    // Se delega el cálculo estricto de ventas y porcentajes al Backend unificado
     if (price <= 0) return toast.error("El precio de venta debe ser mayor a 0");
-    if (cost_buy < 0)
-      return toast.error("El costo de compra no puede ser negativo");
-    if (price < cost_buy)
-      return toast.error("El precio de venta no puede ser menor al costo");
+    if (cost_buy < 0) return toast.error("El costo de compra no puede ser negativo");
+    if (price < cost_buy) return toast.error("El precio de venta no puede ser menor al costo");
     if (stock_actual < 0) return toast.error("El stock no puede ser negativo");
     if (stock < 0) return toast.error("El stock inicial no puede ser negativo");
-    if (price_major < 0)
-      return toast.error("El precio mayorista no puede ser negativo");
+    if (price_major < 0) return toast.error("El precio mayorista no puede ser negativo");
 
-    if (
-      editingProduct.price_major &&
-      Number(editingProduct.price_major) < Number(editingProduct.cost_buy)
-    ) {
-      return toast.error(
-        "El precio mayorista no puede ser menor que el costo de compra.",
-      );
+    if (editingProduct.price_major && Number(editingProduct.price_major) < Number(editingProduct.cost_buy)) {
+      return toast.error("El precio mayorista no puede ser menor que el costo de compra.");
     }
 
     const loadingToast = toast.loading("Procesando...");
 
     try {
-      // Se envia provider_name en texto plano para que el service lo normalice en minúsculas y sin espacios
       const payload: any = {
         name: editingProduct.name.trim(),
-        // Se aplica la misma lógica de normalización que el backend usa para proveedores
         brand: editingProduct.brand?.trim().toLowerCase() || null,
         category: editingProduct.category?.trim().toLowerCase() || null,
         price,
@@ -206,10 +198,7 @@ export default function InventoryPage() {
       await refetch();
     } catch (error: any) {
       console.error(error);
-      const errorMsg =
-        error?.response?.data?.error ||
-        error?.message ||
-        "Error al procesar la solicitud";
+      const errorMsg = error?.response?.data?.error || error?.message || "Error al procesar la solicitud";
       toast.error(errorMsg, { id: loadingToast });
     }
   };
@@ -237,7 +226,7 @@ export default function InventoryPage() {
       Costo_Compra: p.cost_buy,
       Precio_Mayor: p.price_major || 0,
       Stock_Actual: p.stock_actual,
-      Codigo_Barras: p.barcode || "", // Aquí puedes pistolear directamente en Excel
+      Codigo_Barras: p.barcode || "",
     }));
 
     const ws = XLSX.utils.json_to_sheet(dataToExport);
@@ -245,6 +234,7 @@ export default function InventoryPage() {
     XLSX.utils.book_append_sheet(wb, ws, "Inventario");
     XLSX.writeFile(wb, `Inventario_TiendasJhared_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
+
   if (loading && (!products || products.length === 0)) {
     return (
       <div className="h-screen flex items-center justify-center bg-[#0a0a0c]">
@@ -254,16 +244,14 @@ export default function InventoryPage() {
       </div>
     );
   }
-  console.log("Proveedores cargados:", providers);
 
   return (
-    <div className="p-6 bg-[#0a0a0c] min-h-screen text-white">
+    <div className="p-6 bg-[#0a0a0c] min-h-screen text-white flex flex-col">
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-8 bg-dark-900/50 p-6 rounded-3xl border border-white/5">
+      <div className="flex flex-col md:flex-row justify-between items-center mb-6 bg-dark-900/50 p-6 rounded-3xl border border-white/5 shrink-0">
         <div>
           <h1 className="text-3xl font-black flex items-center gap-3 text-white">
-            <Package className="text-brand-500" size={32} /> Control de
-            Inventario
+            <Package className="text-brand-500" size={32} /> Control de Inventario
           </h1>
           <p className="text-dark-400 text-sm">
             Administra productos y niveles de stock de Tiendas JHARED
@@ -271,7 +259,6 @@ export default function InventoryPage() {
         </div>
 
         <div className="flex gap-3 mt-4 md:mt-0">
-          {/* Input de archivo oculto para la importación */}
           <input
             type="file"
             ref={fileInputRef}
@@ -279,8 +266,6 @@ export default function InventoryPage() {
             accept=".xlsx, .xls, .csv"
             onChange={handleFileUpload}
           />
-
-          {/* Botón Importar */}
           <button
             onClick={() => fileInputRef.current?.click()}
             className="p-3 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 transition-all text-dark-300"
@@ -288,8 +273,6 @@ export default function InventoryPage() {
           >
             <Upload size={20} />
           </button>
-
-          {/* Botón Exportar */}
           <button
             onClick={exportToExcel}
             className="p-3 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 transition-all text-dark-300"
@@ -298,7 +281,6 @@ export default function InventoryPage() {
             <Download size={20} />
           </button>
 
-          {/* Botón Nuevo Producto */}
           <button
             onClick={() => {
               setEditingProduct({
@@ -327,11 +309,8 @@ export default function InventoryPage() {
       </div>
 
       {/* BUSCADOR */}
-      <div className="relative mb-6">
-        <Search
-          className="absolute left-4 top-1/2 -translate-y-1/2 text-dark-500"
-          size={20}
-        />
+      <div className="relative mb-6 shrink-0">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-dark-500" size={20} />
         <input
           type="text"
           placeholder="Buscar por nombre, marca, código de barras o proveedor..."
@@ -341,8 +320,8 @@ export default function InventoryPage() {
         />
       </div>
 
-      {/* TABLA */}
-      <div className="bg-dark-900/30 rounded-3xl border border-white/5 overflow-hidden backdrop-blur-sm">
+      {/* TABLA CON PAGINACIÓN INTEGRADA */}
+      <div className="bg-dark-900/30 rounded-3xl border border-white/5 overflow-hidden backdrop-blur-sm flex flex-col justify-between flex-1 min-h-[450px]">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -356,26 +335,20 @@ export default function InventoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filteredProducts.length === 0 ? (
+              {paginatedProducts.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="p-10 text-center text-dark-500 font-medium"
-                  >
+                  <td colSpan={6} className="p-10 text-center text-dark-500 font-medium">
                     No se encontraron productos en el inventario.
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((p) => (
-                  <tr
-                    key={p.id}
-                    className="hover:bg-white/[0.02] transition-colors group"
-                  >
+                paginatedProducts.map((p) => (
+                  <tr key={p.id} className="hover:bg-white/[0.02] transition-colors group">
                     <td className="p-5">
-                      <div className="font-bold text-white group-hover:text-brand-400 transition-colors">
+                      <div className="font-bold text-white group-hover:text-brand-400 transition-colors line-clamp-1">
                         {p.name}
                       </div>
-                      <div className="text-xs text-dark-500 flex gap-2 items-center">
+                      <div className="text-xs text-dark-500 flex gap-2 items-center mt-0.5">
                         <span className="font-mono bg-dark-800 px-1 rounded">
                           {p.barcode || "S/C"}
                         </span>
@@ -388,19 +361,18 @@ export default function InventoryPage() {
                       </span>
                     </td>
                     <td className="p-5">
-                      <span className="text-sm text-dark-300 font-medium">
+                      <span className="text-sm text-dark-300 font-medium truncate block max-w-[150px]">
                         {p.providers?.name || "—"}
                       </span>
                     </td>
                     <td className="p-5">
-                      <div className="text-emerald-400 font-black">
+                      <div className="text-emerald-400 font-black font-mono">
                         S/. {Number(p.price).toFixed(2)}
                       </div>
-                      <div className="text-[10px] text-dark-500">
+                      <div className="text-[10px] text-dark-500 font-mono">
                         Costo: S/. {Number(p.cost_buy).toFixed(2)}
                       </div>
                     </td>
-                    {/* TABLA -> Fila de Producto -> Columna de Stock */}
                     <td className="p-5">
                       <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg font-mono font-bold bg-emerald-500/10 text-emerald-500">
                         {p.stock_actual}
@@ -410,18 +382,8 @@ export default function InventoryPage() {
                           <span>Rotación:</span>
                           <span className="font-bold text-brand-400">
                             {(() => {
-                              const totalStock =
-                                Number(p.stock) ||
-                                Number(p.stock_actual) +
-                                  Number(p.stock_sold || 0);
-                              const rotation =
-                                totalStock > 0
-                                  ? Math.round(
-                                      (Number(p.stock_sold || 0) / totalStock) *
-                                        100,
-                                    )
-                                  : 0;
-                              return rotation;
+                              const totalStock = Number(p.stock) || Number(p.stock_actual) + Number(p.stock_sold || 0);
+                              return totalStock > 0 ? Math.round((Number(p.stock_sold || 0) / totalStock) * 100) : 0;
                             })()}
                             %
                           </span>
@@ -431,18 +393,8 @@ export default function InventoryPage() {
                             className="bg-brand-500 h-full rounded-full transition-all duration-500"
                             style={{
                               width: `${(() => {
-                                const totalStock =
-                                  Number(p.stock) ||
-                                  Number(p.stock_actual) +
-                                    Number(p.stock_sold || 0);
-                                const rotation =
-                                  totalStock > 0
-                                    ? Math.round(
-                                        (Number(p.stock_sold || 0) /
-                                          totalStock) *
-                                          100,
-                                      )
-                                    : 0;
+                                const totalStock = Number(p.stock) || Number(p.stock_actual) + Number(p.stock_sold || 0);
+                                const rotation = totalStock > 0 ? Math.round((Number(p.stock_sold || 0) / totalStock) * 100) : 0;
                                 return Math.min(rotation, 100);
                               })()}%`,
                             }}
@@ -461,7 +413,7 @@ export default function InventoryPage() {
                               price_major: String(p.price_major || ""),
                               stock_actual: String(p.stock_actual),
                               stock: String(p.stock || p.stock_actual),
-                              provider_name: p.providers?.name || "", // Conversion del string real al input editable
+                              provider_name: p.providers?.name || "",
                             });
                             setIsModalOpen(true);
                           }}
@@ -482,6 +434,33 @@ export default function InventoryPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* CONTROLES DE PAGINACIÓN */}
+        <div className="p-4 border-t border-white/5 flex items-center justify-between bg-white/[0.01]">
+          <span className="text-xs text-dark-400 font-medium">
+            Mostrando <span className="text-white font-bold">{paginatedProducts.length}</span> de <span className="text-white font-bold">{filteredProducts.length}</span> productos
+          </span>
+
+          <div className="flex items-center gap-2">
+            <button
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              className="p-2 bg-white/5 hover:bg-white/10 text-white rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="text-xs font-mono px-3 text-dark-300">
+              Página {currentPage} de {totalPages}
+            </span>
+            <button
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              className="p-2 bg-white/5 hover:bg-white/10 text-white rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -505,7 +484,7 @@ export default function InventoryPage() {
               </button>
             </div>
 
-            <div className="p-6 grid grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
+            <div className="p-6 grid grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
               <div className="col-span-2">
                 <label className="text-xs font-bold text-dark-500 uppercase tracking-wider">
                   Nombre del Producto *
@@ -518,6 +497,7 @@ export default function InventoryPage() {
                   placeholder="Ej. Samsung Galaxy S25 FE"
                 />
               </div>
+
               <div>
                 <label className="text-xs font-bold text-dark-500 uppercase tracking-wider">
                   Precio Venta (S/.) *
@@ -531,6 +511,7 @@ export default function InventoryPage() {
                   placeholder="0.00"
                 />
               </div>
+
               <div>
                 <label className="text-xs font-bold text-dark-500 uppercase tracking-wider">
                   Costo Compra (S/.) *
@@ -540,12 +521,11 @@ export default function InventoryPage() {
                   inputMode="decimal"
                   className="w-full bg-black/30 border border-white/10 rounded-xl p-3 mt-1 outline-none focus:border-brand-500 text-white"
                   value={editingProduct?.cost_buy ?? ""}
-                  onChange={(e) =>
-                    handleInputChange("cost_buy", e.target.value)
-                  }
+                  onChange={(e) => handleInputChange("cost_buy", e.target.value)}
                   placeholder="0.00"
                 />
               </div>
+
               <div>
                 <label className="text-xs font-bold text-dark-500 uppercase tracking-wider">
                   Precio Mayorista (S/.)
@@ -555,12 +535,11 @@ export default function InventoryPage() {
                   inputMode="decimal"
                   className="w-full bg-black/30 border border-white/10 rounded-xl p-3 mt-1 outline-none focus:border-brand-500 text-white"
                   value={editingProduct?.price_major ?? ""}
-                  onChange={(e) =>
-                    handleInputChange("price_major", e.target.value)
-                  }
+                  onChange={(e) => handleInputChange("price_major", e.target.value)}
                   placeholder="0.00"
                 />
               </div>
+
               <div>
                 <label className="text-xs font-bold text-dark-500 uppercase tracking-wider">
                   Stock Actual *
@@ -570,14 +549,11 @@ export default function InventoryPage() {
                   inputMode="numeric"
                   className="w-full bg-black/30 border border-white/10 rounded-xl p-3 mt-1 outline-none focus:border-brand-500 text-white"
                   value={editingProduct?.stock_actual ?? ""}
-                  onChange={(e) =>
-                    handleInputChange("stock_actual", e.target.value)
-                  }
+                  onChange={(e) => handleInputChange("stock_actual", e.target.value)}
                   placeholder="0"
                 />
               </div>
 
-              {/* --- SECCIÓN DE SELECTS Y CÓDIGO --- */}
               <div>
                 <label className="text-xs font-bold text-dark-500 uppercase tracking-wider">
                   Marca
@@ -614,7 +590,6 @@ export default function InventoryPage() {
                     value={editingProduct?.barcode || ""}
                     onChange={(e) => handleInputChange("barcode", e.target.value)}
                     onKeyDown={(e) => {
-                      // La pistola envía 'Enter' al terminar de escanear. Evita enviar el formulario por accidente.
                       if (e.key === "Enter") {
                         e.preventDefault();
                         toast.success("Código capturado", { duration: 1000, position: "bottom-center" });
@@ -630,19 +605,16 @@ export default function InventoryPage() {
                   Proveedor del Producto
                 </label>
                 <Combobox
-                  // los proveedores pasan como 'options'
                   options={providers.map((p) => ({ name: p.name }))}
                   value={editingProduct?.provider_name || ""}
                   onChange={(val) => handleInputChange("provider_name", val)}
                   placeholder="Selecciona un proveedor..."
                 />
                 <p className="text-[11px] text-dark-500 mt-1">
-                  Si el proveedor no está en la lista, puedes escribirlo
-                  directamente.
+                  Si el proveedor no está en la lista, puedes escribirlo directamente.
                 </p>
               </div>
 
-              {/* --- BOTONES DE ACCIÓN --- */}
               <div className="col-span-2 flex gap-4 mt-4 border-t border-white/5 pt-4">
                 <button
                   type="button"
@@ -655,9 +627,7 @@ export default function InventoryPage() {
                   type="submit"
                   className="flex-[2] bg-brand-600 hover:bg-brand-500 py-3 rounded-xl font-black text-white shadow-lg shadow-brand-600/20 transition-all"
                 >
-                  {editingProduct?.id
-                    ? "Actualizar Producto"
-                    : "Registrar Producto"}
+                  {editingProduct?.id ? "Actualizar Producto" : "Registrar Producto"}
                 </button>
               </div>
             </div>

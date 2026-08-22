@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import { env } from "./config/env";
 import { errorHandler } from "./middleware/errorHandler";
-
+//21/08/26
 // Importación de Rutas
 import authRoutes from "./modules/auth/auth.routes";
 import userRoutes from "./modules/users/users.routes";

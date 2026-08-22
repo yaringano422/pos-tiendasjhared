@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useCartStore } from "../store/cartStore";
 import { useProducts } from "../hooks/useProducts";
 import { useAuthStore } from "../store/authStore";
@@ -21,49 +21,23 @@ import {
   Calendar,
   Tag,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import clsx from "clsx";
 import toast from "react-hot-toast";
 import type { Product, PriceMode } from "../types";
 
+const ITEMS_PER_PAGE = 12;
+
 export default function POSPage() {
   const { products, categories, loading, refetch } = useProducts();
-  const [footerHeight, setFooterHeight] = React.useState(480);
-  const isResizing = React.useRef(false);
 
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [showMobileCart, setShowMobileCart] = useState(false);
   const [customerName, setCustomerName] = useState("Público General");
-
-  const startResizing = React.useCallback(
-    (mouseDownEvent: React.MouseEvent) => {
-      mouseDownEvent.preventDefault();
-      isResizing.current = true;
-      const startY = mouseDownEvent.clientY;
-      const startHeight = footerHeight;
-
-      const doDrag = (mouseMoveEvent: MouseEvent) => {
-        if (!isResizing.current) return;
-        const deltaY = mouseMoveEvent.clientY - startY;
-        const newHeight = startHeight - deltaY;
-
-        if (newHeight > 220 && newHeight < window.innerHeight - 150) {
-          setFooterHeight(newHeight);
-        }
-      };
-
-      const stopDrag = () => {
-        isResizing.current = false;
-        document.removeEventListener("mousemove", doDrag);
-        document.removeEventListener("mouseup", stopDrag);
-      };
-
-      document.addEventListener("mousemove", doDrag);
-      document.addEventListener("mouseup", stopDrag);
-    },
-    [footerHeight],
-  );
 
   const [tipoTransaccion, setTipoTransaccion] = useState<
     "venta" | "cotizacion" | "devolucion" | "reserva"
@@ -80,33 +54,10 @@ export default function POSPage() {
   const cart = useCartStore();
   const total = cart.getTotal();
 
-  const startResizingTouch = React.useCallback(
-    (touchEvent: React.TouchEvent) => {
-      isResizing.current = true;
-      const startY = touchEvent.touches[0].clientY;
-      const startHeight = footerHeight;
-
-      const doDragTouch = (moveEvent: TouchEvent) => {
-        if (!isResizing.current) return;
-        const deltaY = moveEvent.touches[0].clientY - startY;
-        const newHeight = startHeight - deltaY;
-
-        if (newHeight > 220 && newHeight < window.innerHeight - 150) {
-          setFooterHeight(newHeight);
-        }
-      };
-
-      const stopDragTouch = () => {
-        isResizing.current = false;
-        document.removeEventListener("touchmove", doDragTouch);
-        document.removeEventListener("touchend", stopDragTouch);
-      };
-
-      document.addEventListener("touchmove", doDragTouch);
-      document.addEventListener("touchend", stopDragTouch);
-    },
-    [footerHeight],
-  );
+  // Reset de página al filtrar o buscar
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, activeCategory]);
 
   const barcodeBuffer = useRef("");
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -183,12 +134,22 @@ export default function POSPage() {
   const formatCurrency = (val: number) =>
     `S/ ${val.toLocaleString("es-PE", { minimumFractionDigits: 2 })}`;
 
-  const filteredProducts = products.filter(
-    (p) =>
-      (!activeCategory || p.category === activeCategory) &&
-      (p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.brand?.toLowerCase().includes(search.toLowerCase())),
-  );
+  // Filtrado optimizado con useMemo
+  const filteredProducts = useMemo(() => {
+    return products.filter(
+      (p) =>
+        (!activeCategory || p.category === activeCategory) &&
+        (p.name.toLowerCase().includes(search.toLowerCase()) ||
+          p.brand?.toLowerCase().includes(search.toLowerCase())),
+    );
+  }, [products, activeCategory, search]);
+
+  // Paginación calculada
+  const totalPages = Math.ceil(filteredProducts.length / ITEMS_PER_PAGE) || 1;
+  const paginatedProducts = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredProducts.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredProducts, currentPage]);
 
   const handleAddToCart = (product: Product) => {
     const isService =
@@ -223,96 +184,6 @@ export default function POSPage() {
     });
   };
 
-  const printTicket = (saleData: any) => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-
-    const subtotalSinImpuesto = saleData.total_price / 1.18;
-    const igv = saleData.total_price - subtotalSinImpuesto;
-
-    const ticketHtml = `
-      <html>
-        <head>
-          <style>
-            @page { size: 80mm auto; margin: 0; }
-            body { font-family: 'Courier New', monospace; width: 75mm; padding: 3mm; font-size: 11px; color: #000; }
-            .text-center { text-align: center; }
-            .bold { font-weight: bold; }
-            .divider { border-top: 1px dashed #000; margin: 5px 0; }
-            .table { width: 100%; border-collapse: collapse; }
-            .text-right { text-align: right; }
-          </style>
-        </head>
-        <body>
-          <div class="text-center">
-            <span class="bold" style="font-size: 14px;">TIENDAS JHARED</span><br/>
-            RUC: 10201010913<br/>
-            Jr.Atahualpa 270 - Huancayo - Junin<br/>
-            Tel: 960 097 010
-          </div>
-          <div class="divider"></div>
-          <div>
-            FECHA: ${new Date().toLocaleString()}<br/>
-            TRANSACCIÓN: ${saleData.tipo_transaccion.toUpperCase()}<br/>
-            CLIENTE: ${saleData.customer_name || "PÚBLICO GENERAL"}<br/>
-            METODO: ${saleData.metodo_pago.toUpperCase()}<br/>
-            TIPO VENTA: ${saleData.items[0]?.modo_precio.toUpperCase() || "MENOR"}
-          </div>
-          <div class="divider"></div>
-          <table class="table">
-            <thead>
-              <tr>
-                <th align="left">CANT/DESCRIP</th>
-                <th align="right">TOTAL</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${saleData.items
-                .map(
-                  (item: any) => `
-                <tr>
-                  <td colspan="2">${item.name}</td>
-                </tr>
-                <tr>
-                  <td>${item.quantity} x ${item.price.toFixed(2)} (${item.modo_precio})</td>
-                  <td class="text-right">${item.subtotal.toFixed(2)}</td>
-                </tr>
-              `,
-                )
-                .join("")}
-            </tbody>
-          </table>
-          <div class="divider"></div>
-          <table class="table">
-            <tr>
-              <td>OP. GRAVADA:</td>
-              <td class="text-right">S/ ${subtotalSinImpuesto.toFixed(2)}</td>
-            </tr>
-            <tr>
-              <td>IGV (18%):</td>
-              <td class="text-right">S/ ${igv.toFixed(2)}</td>
-            </tr>
-            <tr class="bold" style="font-size: 14px;">
-              <td>TOTAL A PAGAR:</td>
-              <td class="text-right">S/ ${saleData.total_price.toFixed(2)}</td>
-            </tr>
-          </table>
-          <div class="divider"></div>
-          <p class="text-center">¡GRACIAS POR SU COMPRA!<br/>Representación impresa de boleta electrónica</p>
-          <script>
-            window.onload = () => { 
-              window.print(); 
-              setTimeout(() => window.close(), 500);
-            }
-          </script>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.write(ticketHtml);
-    printWindow.document.close();
-  };
-
   const handleConfirmSale = async () => {
     if (cart.items.length === 0) return;
 
@@ -338,16 +209,6 @@ export default function POSPage() {
         metodoPago === "tarjeta" || metodoPago === "mixto"
           ? totalCarrito + cart.getCommisionCard()
           : totalCarrito + extraTransferencia;
-
-      if (metodoPago === "mixto") {
-        const sumaPagos = pagoEfectivo + pagoTarjeta;
-        if (Math.abs(sumaPagos - totalFinalVenta) > 0.01) {
-          toast.error("La suma de pagos no coincide con el total", {
-            id: loadingToast,
-          });
-          return;
-        }
-      }
 
       const subtotalBase = Number((totalFinalVenta / 1.18).toFixed(2));
       const igvCalculado = Number((totalFinalVenta - subtotalBase).toFixed(2));
@@ -402,13 +263,7 @@ export default function POSPage() {
         throw new Error(err?.error || "Error en el servidor");
       }
 
-      const result = await response.json();
       toast.success("Venta completada", { id: loadingToast });
-
-      printTicket({
-        ...saleData,
-        id: result.id,
-      });
 
       cart.clearCart();
       setPagoEfectivo(0);
@@ -444,10 +299,11 @@ export default function POSPage() {
         : cart.getTotal();
 
   return (
-    <div className="relative flex flex-col lg:flex-row gap-6 h-[calc(100vh-100px)] animate-in fade-in duration-500 text-white pb-16 lg:pb-0">
-      {/* SECCIÓN IZQUIERDA: PRODUCTOS */}
+    <div className="relative flex flex-col lg:flex-row gap-6 h-[calc(100vh-100px)] text-white overflow-hidden">
+      {/* SECCIÓN IZQUIERDA: PRODUCTOS Y PAGINACIÓN */}
       <div className="flex-1 flex flex-col min-w-0 h-full">
-        <div className="mb-4 space-y-3">
+        {/* BUSCADOR Y FILTROS */}
+        <div className="mb-4 space-y-3 shrink-0">
           <div className="relative group">
             <Search
               className="absolute left-4 top-1/2 -translate-y-1/2 text-dark-400 group-focus-within:text-brand-400"
@@ -497,59 +353,89 @@ export default function POSPage() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 gap-3 pr-1 custom-scrollbar">
-          {filteredProducts.map((product) => (
-            <div
-              key={product.id}
-              onClick={() => handleAddToCart(product)}
-              className={clsx(
-                "group bg-dark-900/40 border p-3 rounded-2xl transition-all cursor-pointer active:scale-95 flex flex-col justify-between min-h-[140px]",
-                product.stock_actual > 0
-                  ? "border-dark-800 hover:border-brand-500/50 shadow-md hover:shadow-brand-500/5"
-                  : "opacity-50 grayscale cursor-not-allowed",
-              )}
-            >
-              <div>
-                <div className="flex justify-between items-start mb-1">
-                  <h3 className="font-bold text-xs line-clamp-2 leading-tight group-hover:text-brand-400">
-                    {product.name}
-                  </h3>
-                  <div className="bg-brand-500/10 p-1 rounded-lg ml-1 group-hover:bg-brand-500 group-hover:text-white transition-colors">
-                    <Plus size={12} />
+        {/* CATÁLOGO EN GRID CON ALTURA Y TAMAÑO FIJO */}
+        <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 auto-rows-[140px]">
+            {paginatedProducts.map((product) => (
+              <div
+                key={product.id}
+                onClick={() => handleAddToCart(product)}
+                className={clsx(
+                  "group bg-dark-900/40 border p-3 rounded-2xl transition-all cursor-pointer active:scale-95 flex flex-col justify-between h-[140px]",
+                  product.stock_actual > 0
+                    ? "border-dark-800 hover:border-brand-500/50 shadow-md hover:shadow-brand-500/5"
+                    : "opacity-50 grayscale cursor-not-allowed",
+                )}
+              >
+                <div>
+                  <div className="flex justify-between items-start mb-1">
+                    <h3 className="font-bold text-xs line-clamp-2 leading-tight group-hover:text-brand-400">
+                      {product.name}
+                    </h3>
+                    <div className="bg-brand-500/10 p-1 rounded-lg ml-1 group-hover:bg-brand-500 group-hover:text-white transition-colors shrink-0">
+                      <Plus size={12} />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <span className="text-[9px] px-1.5 py-0.5 bg-dark-800 rounded-md text-dark-400 uppercase font-medium">
+                      {product.brand || "Genérico"}
+                    </span>
+                    <span
+                      className={clsx(
+                        "text-[9px] font-bold flex items-center gap-0.5",
+                        product.stock_actual < 5
+                          ? "text-red-400"
+                          : "text-emerald-400",
+                      )}
+                    >
+                      <Layers size={9} /> {product.stock_actual}
+                    </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span className="text-[9px] px-1.5 py-0.5 bg-dark-800 rounded-md text-dark-400 uppercase font-medium">
-                    {product.brand || "Genérico"}
+                <div className="mt-2 flex justify-between items-end">
+                  <span className="text-base font-black text-white font-mono">
+                    {formatCurrency(product.price)}
                   </span>
-                  <span
-                    className={clsx(
-                      "text-[9px] font-bold flex items-center gap-0.5",
-                      product.stock_actual < 5
-                        ? "text-red-400"
-                        : "text-emerald-400",
-                    )}
-                  >
-                    <Layers size={9} /> {product.stock_actual}
-                  </span>
+                  {product.image_url && (
+                    <img
+                      src={product.image_url}
+                      alt=""
+                      className="w-8 h-8 rounded-lg object-cover border border-dark-700 shadow shrink-0"
+                    />
+                  )}
                 </div>
               </div>
+            ))}
+          </div>
+        </div>
 
-              <div className="mt-2 flex justify-between items-end">
-                <span className="text-base font-black text-white font-mono">
-                  {formatCurrency(product.price)}
-                </span>
-                {product.image_url && (
-                  <img
-                    src={product.image_url}
-                    alt=""
-                    className="w-8 h-8 rounded-lg object-cover border border-dark-700 shadow"
-                  />
-                )}
-              </div>
-            </div>
-          ))}
+        {/* BARRA DE PAGINACIÓN */}
+        <div className="mt-3 pt-2 border-t border-dark-800 flex items-center justify-between shrink-0">
+          <span className="text-xs text-dark-400 font-medium">
+            Mostrando <span className="text-white font-bold">{paginatedProducts.length}</span> de <span className="text-white font-bold">{filteredProducts.length}</span> productos
+          </span>
+
+          <div className="flex items-center gap-2">
+            <button
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              className="p-1.5 bg-dark-800 hover:bg-dark-700 text-white rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="text-xs font-mono px-2 text-dark-300">
+              Pág. {currentPage} / {totalPages}
+            </span>
+            <button
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              className="p-1.5 bg-dark-800 hover:bg-dark-700 text-white rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -579,16 +465,17 @@ export default function POSPage() {
         </div>
       )}
 
-      {/* SIDEBAR DERECHA: CARRITO Y PAGO (RESPONSIVO EN DESKTOP Y BOTTOM DRAWER EN MÓVIL) */}
+      {/* PANEL DERECHO: CARRITO Y TRANSACCIONES (ESTRUCTURA CORREGIDA) */}
       <aside
         className={clsx(
-          "fixed inset-x-0 bottom-0 top-0 z-50 lg:relative lg:inset-auto lg:z-0 lg:flex w-full lg:w-[410px] bg-dark-950/95 backdrop-blur-md lg:bg-dark-900/30 border-l border-dark-800 flex flex-col transition-all duration-300",
+          "fixed inset-0 z-50 lg:relative lg:inset-auto lg:z-0 lg:flex w-full lg:w-[410px] bg-dark-950 lg:bg-dark-900/40 border-l border-dark-800/80 flex flex-col h-full transition-all duration-300",
           showMobileCart
             ? "translate-y-0 opacity-100"
             : "translate-y-full lg:translate-y-0 opacity-0 lg:opacity-100 pointer-events-none lg:pointer-events-auto",
         )}
       >
-        <div className="p-4 border-b border-dark-800 flex justify-between items-center bg-dark-900/60">
+        {/* ENCABEZADO DEL CARRITO */}
+        <div className="p-4 border-b border-dark-800 flex justify-between items-center bg-dark-900/60 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 bg-brand-500/20 rounded-lg">
               <ShoppingBag className="text-brand-500" size={18} />
@@ -603,11 +490,11 @@ export default function POSPage() {
           </button>
         </div>
 
-        {/* LISTA DE ITEMS CARRITO */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+        {/* LISTA DE PRODUCTOS DEL CARRITO */}
+        <div className="flex-1 min-h-[120px] overflow-y-auto p-4 space-y-3 custom-scrollbar">
           {cart.items.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-dark-600 opacity-40">
-              <Smartphone size={50} className="mb-3" />
+              <Smartphone size={40} className="mb-2" />
               <p className="text-xs font-medium">Carrito Vacío</p>
             </div>
           ) : (
@@ -688,169 +575,156 @@ export default function POSPage() {
           )}
         </div>
 
-        {/* FOOTER OPCIONES Y PAGOS */}
+        {/* CONTENEDOR DE CONTROLES DE PAGO Y TRANSACCIÓN (DESPLEGABLES/OPCIONES) */}
         {cart.items.length > 0 && (
-          <div className="flex flex-col border-t border-dark-800 bg-dark-900/90 max-h-[55vh] lg:max-h-none overflow-y-auto custom-scrollbar">
-            {/* RESIZER EN DESKTOP */}
-            <div
-              onMouseDown={startResizing}
-              onTouchStart={startResizingTouch}
-              className="hidden lg:flex h-2.5 w-full cursor-ns-resize bg-dark-950 border-b border-dark-800 items-center justify-center group select-none hover:bg-brand-500/20"
-            >
-              <div className="w-10 h-1 bg-dark-700 group-hover:bg-brand-500 rounded-full transition-colors" />
+          <div className="shrink-0 border-t border-dark-800 bg-dark-900/90 p-4 space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
+            {/* TIPO DE TRANSACCIÓN */}
+            <div className="space-y-1">
+              <label className="text-[9px] text-dark-400 font-bold uppercase tracking-wider">
+                Tipo de Transacción
+              </label>
+              <div className="grid grid-cols-4 gap-1 bg-dark-950 p-1 rounded-xl border border-dark-800">
+                {[
+                  { id: "venta", label: "Venta", icon: ShoppingBag },
+                  { id: "cotizacion", label: "Cotiz.", icon: FileText },
+                  { id: "devolucion", label: "Devol.", icon: RefreshCw },
+                  { id: "reserva", label: "Reserv.", icon: Calendar },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setTipoTransaccion(t.id as any)}
+                    className={clsx(
+                      "flex flex-col items-center justify-center py-1.5 px-1 rounded-lg transition-all text-center gap-0.5",
+                      tipoTransaccion === t.id
+                        ? "bg-brand-600 text-white font-bold shadow"
+                        : "text-dark-400 hover:text-white",
+                    )}
+                  >
+                    <t.icon size={13} />
+                    <span className="text-[9px] tracking-tight">{t.label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <div className="p-4 space-y-3.5">
-              {/* TIPO DE TRANSACCIÓN */}
-              <div className="space-y-1">
-                <label className="text-[9px] text-dark-400 font-bold uppercase tracking-wider">
-                  Tipo de Transacción
-                </label>
-                <div className="grid grid-cols-4 gap-1 bg-dark-950 p-1 rounded-xl border border-dark-800">
-                  {[
-                    { id: "venta", label: "Venta", icon: ShoppingBag },
-                    { id: "cotizacion", label: "Cotiz.", icon: FileText },
-                    { id: "devolucion", label: "Devol.", icon: RefreshCw },
-                    { id: "reserva", label: "Reserv.", icon: Calendar },
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setTipoTransaccion(t.id as any)}
-                      className={clsx(
-                        "flex flex-col items-center justify-center py-1.5 px-1 rounded-lg transition-all text-center gap-0.5",
-                        tipoTransaccion === t.id
-                          ? "bg-brand-600 text-white font-bold"
-                          : "text-dark-400 hover:text-white",
-                      )}
-                    >
-                      <t.icon size={13} />
-                      <span className="text-[9px] tracking-tight">
-                        {t.label}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+            {/* TIPO DE VENTA */}
+            <div className="space-y-1">
+              <label className="text-[9px] text-dark-400 font-bold uppercase tracking-wider">
+                Tipo de Venta
+              </label>
+              <div className="flex bg-dark-950 p-1 rounded-xl border border-dark-800 w-full">
+                {[
+                  { id: "menor", label: "Por Menor" },
+                  { id: "mayorista", label: "Por Mayor" },
+                  { id: "personalizado", label: "Personalizado" },
+                ].map((v) => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => {
+                      setTipoVenta(v.id as PriceMode);
+                      cart.setGlobalPriceMode(v.id as PriceMode);
+                    }}
+                    className={clsx(
+                      "flex-1 text-center py-1 rounded-lg text-xs transition-all flex items-center justify-center gap-1",
+                      tipoVenta === v.id
+                        ? "bg-dark-800 text-brand-400 font-bold border border-dark-700/60"
+                        : "text-dark-400 hover:text-white",
+                    )}
+                  >
+                    <Tag size={11} />
+                    {v.label}
+                  </button>
+                ))}
               </div>
+            </div>
 
-              {/* TIPO DE VENTA */}
-              <div className="space-y-1">
-                <label className="text-[9px] text-dark-400 font-bold uppercase tracking-wider">
-                  Tipo de Venta
-                </label>
-                <div className="flex bg-dark-950 p-1 rounded-xl border border-dark-800 w-full">
-                  {[
-                    { id: "menor", label: "Por Menor" },
-                    { id: "mayorista", label: "Por Mayor" },
-                    { id: "personalizado", label: "Personalizado" },
-                  ].map((v) => (
-                    <button
-                      key={v.id}
-                      type="button"
-                      onClick={() => {
-                        setTipoVenta(v.id as PriceMode);
-                        cart.setGlobalPriceMode(v.id as PriceMode);
-                      }}
-                      className={clsx(
-                        "flex-1 text-center py-1 rounded-lg text-xs transition-all flex items-center justify-center gap-1",
-                        tipoVenta === v.id
-                          ? "bg-dark-800 text-brand-400 font-bold border border-dark-700/60"
-                          : "text-dark-400 hover:text-white",
-                      )}
-                    >
-                      <Tag size={11} />
-                      {v.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {/* CLIENTE */}
+            <div className="space-y-1">
+              <label className="text-[9px] text-dark-400 font-bold uppercase tracking-wider">
+                Cliente
+              </label>
+              <input
+                type="text"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Nombre del cliente"
+                className="w-full bg-dark-950 border border-dark-700 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-brand-500 text-white font-medium"
+              />
+            </div>
 
-              {/* CLIENTE */}
-              <div className="space-y-1">
-                <label className="text-[9px] text-dark-400 font-bold uppercase tracking-wider">
-                  Cliente
-                </label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Nombre del cliente"
-                  className="w-full bg-dark-950 border border-dark-700 rounded-lg px-3 py-1.5 text-xs outline-none focus:border-brand-500 text-white font-medium"
-                />
-              </div>
-
-              {/* MÉTODOS DE PAGO */}
-              <div className="space-y-1">
-                <label className="text-[9px] text-dark-400 font-bold uppercase tracking-wider">
-                  Método de Pago
-                </label>
-                <div className="grid grid-cols-3 gap-1">
-                  {[
-                    { id: "efectivo", icon: Banknote, label: "Efectivo" },
-                    { id: "tarjeta", icon: CreditCard, label: "Tarjeta (+5%)" },
-                    { id: "yape_plin", icon: Smartphone, label: "Yape / Plin" },
-                    { id: "transferencia", icon: Layers, label: "Transf." },
-                    { id: "mixto", icon: Calculator, label: "Mixto" },
-                  ].map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setMetodoPago(m.id as any)}
-                      className={clsx(
-                        "p-1.5 rounded-xl border flex flex-col items-center gap-0.5 transition-all",
-                        metodoPago === m.id
-                          ? "border-brand-500 bg-brand-500/10 text-brand-400 font-bold"
-                          : "border-dark-700 text-dark-500 hover:bg-dark-950",
-                      )}
-                    >
-                      <m.icon size={14} />
-                      <span className="text-[8px] uppercase tracking-wider">
-                        {m.label}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* TOTALES Y BOTÓN FINALIZAR */}
-              <div className="space-y-2 border-t border-dark-800 pt-3">
-                <div className="flex justify-between text-xs text-dark-400">
-                  <span>Subtotal</span>
-                  <span className="font-mono">
-                    {formatCurrency(cart.getSubtotal())}
-                  </span>
-                </div>
-
-                {(metodoPago === "tarjeta" || metodoPago === "mixto") && (
-                  <div className="flex justify-between text-xs text-emerald-400">
-                    <span>Comisión Tarjeta (5%)</span>
-                    <span className="font-mono">
-                      {formatCurrency(cart.getCommisionCard())}
+            {/* MÉTODOS DE PAGO */}
+            <div className="space-y-1">
+              <label className="text-[9px] text-dark-400 font-bold uppercase tracking-wider">
+                Método de Pago
+              </label>
+              <div className="grid grid-cols-3 gap-1">
+                {[
+                  { id: "efectivo", icon: Banknote, label: "Efectivo" },
+                  { id: "tarjeta", icon: CreditCard, label: "Tarjeta (+5%)" },
+                  { id: "yape_plin", icon: Smartphone, label: "Yape / Plin" },
+                  { id: "transferencia", icon: Layers, label: "Transf." },
+                  { id: "mixto", icon: Calculator, label: "Mixto" },
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setMetodoPago(m.id as any)}
+                    className={clsx(
+                      "p-1.5 rounded-xl border flex flex-col items-center gap-0.5 transition-all",
+                      metodoPago === m.id
+                        ? "border-brand-500 bg-brand-500/10 text-brand-400 font-bold"
+                        : "border-dark-700 text-dark-500 hover:bg-dark-950",
+                    )}
+                  >
+                    <m.icon size={14} />
+                    <span className="text-[8px] uppercase tracking-wider">
+                      {m.label}
                     </span>
-                  </div>
-                )}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-                <div className="flex justify-between text-lg font-black pt-1">
-                  <span>Total</span>
-                  <span className="text-brand-500 font-mono">
-                    {formatCurrency(calculatedTotal)}
+            {/* TOTALES Y BOTÓN DE VENTA */}
+            <div className="space-y-2 border-t border-dark-800 pt-3">
+              <div className="flex justify-between text-xs text-dark-400">
+                <span>Subtotal</span>
+                <span className="font-mono">
+                  {formatCurrency(cart.getSubtotal())}
+                </span>
+              </div>
+
+              {(metodoPago === "tarjeta" || metodoPago === "mixto") && (
+                <div className="flex justify-between text-xs text-emerald-400">
+                  <span>Comisión Tarjeta (5%)</span>
+                  <span className="font-mono">
+                    {formatCurrency(cart.getCommisionCard())}
                   </span>
                 </div>
+              )}
 
-                <button
-                  onClick={handleConfirmSale}
-                  disabled={cart.items.length === 0}
-                  className="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-brand-600/30 text-sm"
-                >
-                  <CheckCircle2 size={18} />
-                  <span>
-                    {tipoTransaccion === "venta" && "Finalizar Venta"}
-                    {tipoTransaccion === "cotizacion" && "Generar Cotización"}
-                    {tipoTransaccion === "devolucion" && "Procesar Devolución"}
-                    {tipoTransaccion === "reserva" && "Registrar Reserva"}
-                  </span>
-                </button>
+              <div className="flex justify-between text-lg font-black pt-1">
+                <span>Total</span>
+                <span className="text-brand-500 font-mono">
+                  {formatCurrency(calculatedTotal)}
+                </span>
               </div>
+
+              <button
+                onClick={handleConfirmSale}
+                disabled={cart.items.length === 0}
+                className="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-brand-600/30 text-sm"
+              >
+                <CheckCircle2 size={18} />
+                <span>
+                  {tipoTransaccion === "venta" && "Finalizar Venta"}
+                  {tipoTransaccion === "cotizacion" && "Generar Cotización"}
+                  {tipoTransaccion === "devolucion" && "Procesar Devolución"}
+                  {tipoTransaccion === "reserva" && "Registrar Reserva"}
+                </span>
+              </button>
             </div>
           </div>
         )}
